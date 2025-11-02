@@ -1,0 +1,542 @@
+<script>
+  (function (window) {
+    "use strict";
+
+    const viewTab = window.viewTab || (window.viewTab = {});
+
+    function buildDynamicViewPad(subTabConfig, data) {
+      const container = document.createElement("div");
+      container.className = "dynamic-view-pad";
+      if (subTabConfig?.subId) {
+        container.dataset.subTabId = subTabConfig.subId;
+      }
+
+      const header = buildViewPadHeader(subTabConfig);
+      container.appendChild(header);
+
+      if (
+        subTabConfig?.searchBar ||
+        (Array.isArray(subTabConfig?.filterOptions) &&
+          subTabConfig.filterOptions.length > 0)
+      ) {
+        const searchFilters = buildSearchFilters(subTabConfig);
+        container.appendChild(searchFilters);
+      }
+
+      const headers = Array.isArray(data?.headers) ? data.headers : [];
+      const rows = Array.isArray(data?.rows)
+        ? data.rows
+        : Array.isArray(data?.data)
+        ? data.data
+        : [];
+      const table = buildDataTable({ headers, rows }, subTabConfig);
+      container.appendChild(table);
+
+      return container;
+    }
+
+    function buildViewPadHeader(subTabConfig) {
+      const header = document.createElement("div");
+      header.className = "view-pad-header";
+
+      const leftSection = document.createElement("div");
+      leftSection.className = "header-left";
+
+      const rightSection = document.createElement("div");
+      rightSection.className = "header-right";
+
+      const formConfig =
+        subTabConfig?.formConfig ||
+        window.bootstrapData?.forms?.[subTabConfig?.subId];
+      if (formConfig?.formId) {
+        const addButton = document.createElement("button");
+        addButton.type = "button";
+        addButton.className = "add-new-btn accent-button";
+        addButton.innerHTML = `<i class="fas fa-plus"></i> ${
+          formConfig.titleAr || "إضافة جديد"
+        }`;
+        addButton.onclick = () =>
+          openFormModal(formConfig.formId, null, subTabConfig?.subId);
+        leftSection.appendChild(addButton);
+      }
+
+      const bulkActions = document.createElement("select");
+      bulkActions.className = "bulk-actions-dropdown";
+      bulkActions.innerHTML = `
+        <option value="">إجراءات جماعية...</option>
+        <option value="activate">تفعيل المحدد</option>
+        <option value="deactivate">تعطيل المحدد</option>
+        <option value="delete">حذف المحدد</option>
+    `;
+      bulkActions.addEventListener("change", (event) => {
+        const value = event.target.value;
+        if (value) {
+          performBulkAction(value, subTabConfig);
+          event.target.value = "";
+        }
+      });
+      rightSection.appendChild(bulkActions);
+
+      header.appendChild(leftSection);
+      header.appendChild(rightSection);
+
+      return header;
+    }
+
+    function performBulkAction(action, subTabConfig) {
+      const selectedCheckboxes = document.querySelectorAll(
+        ".row-checkbox:checked"
+      );
+
+      if (selectedCheckboxes.length === 0) {
+        window.showToast?.("⚠️ يرجى تحديد عنصر واحد على الأقل", "warning");
+        return;
+      }
+
+      const selectedRows = Array.from(selectedCheckboxes).map((cb) => {
+        const rowIndex = parseInt(cb.value, 10);
+        const row = document.querySelector(`tr[data-row-index="${rowIndex}"]`);
+        return {
+          index: rowIndex,
+          id: row?.dataset?.rowId,
+          element: row,
+        };
+      });
+
+      console.log(
+        `🔄 Performing ${action} on ${selectedRows.length} rows:`,
+        selectedRows
+      );
+
+      switch (action) {
+        case "activate":
+          activateSelectedRows(selectedRows, subTabConfig);
+          break;
+        case "deactivate":
+          deactivateSelectedRows(selectedRows, subTabConfig);
+          break;
+        case "delete":
+          deleteSelectedRows(selectedRows, subTabConfig);
+          break;
+        case "export":
+          exportSelectedRows(selectedRows, subTabConfig);
+          break;
+        default:
+          window.showToast?.("❌ الإجراء غير معروف", "error");
+      }
+    }
+
+    function activateSelectedRows(selectedRows, subTabConfig) {
+      const rowIds = selectedRows.map((row) => row.id);
+
+      const scriptRunner = google?.script?.run;
+      if (!scriptRunner) {
+        window.showToast?.("خدمة التفعيل غير متاحة حالياً", "error");
+        return;
+      }
+
+      scriptRunner
+        .withSuccessHandler((response) => {
+          if (response.success) {
+            window.showToast?.(
+              `✅ تم تفعيل ${response.updated} عنصر`,
+              "success"
+            );
+            loadSubTabContent(subTabConfig);
+          } else {
+            window.showToast?.("❌ فشل التفعيل", "error");
+          }
+        })
+        .withFailureHandler((error) => {
+          window.showToast?.(`❌ خطأ في التفعيل: ${error.message}`, "error");
+        })
+        .bulkUpdateMaterialStatus(rowIds, true);
+    }
+
+    function deactivateSelectedRows(selectedRows, subTabConfig) {
+      window.showToast?.(`🔒 تعطيل ${selectedRows.length} عنصر`, "info");
+    }
+
+    function deleteSelectedRows(selectedRows, subTabConfig) {
+      if (confirm(`⚠️ هل أنت متأكد من حذف ${selectedRows.length} عنصر؟`)) {
+        window.showToast?.(`🗑️ جاري حذف ${selectedRows.length} عنصر`, "info");
+      }
+    }
+
+    function exportSelectedRows(selectedRows, subTabConfig) {
+      window.showToast?.(`📤 تصدير ${selectedRows.length} عنصر`, "info");
+    }
+
+    function buildDataTable(data, subTabConfig) {
+      const table = document.createElement("table");
+      table.className = "dynamic-data-table";
+      table.dataset.subTabId = subTabConfig?.subId || "";
+
+      const headers = Array.isArray(data?.headers) ? data.headers : [];
+      const rows = Array.isArray(data?.rows) ? data.rows : [];
+
+      const headerRow = buildTableHeaders(headers, subTabConfig);
+      table.appendChild(headerRow);
+
+      const tbody = document.createElement("tbody");
+      rows.forEach((row, index) => {
+        const tr = buildTableRow(row, headers, subTabConfig, index);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+
+      return table;
+    }
+
+    function buildTableHeaders(headers, subTabConfig) {
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+
+      const checkboxTh = document.createElement("th");
+      checkboxTh.innerHTML =
+        '<input type="checkbox" id="selectAllCheckboxes" title="تحديد الكل">';
+      checkboxTh.style.width = "50px";
+      checkboxTh.style.textAlign = "center";
+      headerRow.appendChild(checkboxTh);
+
+      headers.forEach((header) => {
+        const th = document.createElement("th");
+        th.textContent = header;
+        headerRow.appendChild(th);
+      });
+
+      const actionsTh = document.createElement("th");
+      actionsTh.textContent = "الإجراءات";
+      actionsTh.style.width = "120px";
+      headerRow.appendChild(actionsTh);
+
+      thead.appendChild(headerRow);
+
+      if (subTabConfig?.subId) {
+        thead.dataset.subTabId = subTabConfig.subId;
+      }
+
+      const selectAllCheckbox = checkboxTh.querySelector(
+        'input[type="checkbox"]'
+      );
+      if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener("change", function () {
+          const table = thead.closest("table");
+          const rowCheckboxes = table
+            ? table.querySelectorAll(".row-checkbox")
+            : document.querySelectorAll(".row-checkbox");
+          rowCheckboxes.forEach((checkbox) => {
+            checkbox.checked = this.checked;
+          });
+        });
+      }
+
+      return thead;
+    }
+
+    function buildTableRow(row, headers, subTabConfig, rowIndex) {
+      const tr = document.createElement("tr");
+      tr.className = "clickable-row";
+      tr.dataset.rowIndex = rowIndex;
+
+      const record = coerceRowToRecord(row, headers);
+      const recordId =
+        (record && (record.ID || record.User_Id || record.Employee_ID)) ??
+        rowIndex;
+      tr.dataset.rowId = recordId;
+
+      const checkboxTd = document.createElement("td");
+      checkboxTd.style.textAlign = "center";
+      const rowCheckbox = document.createElement("input");
+      rowCheckbox.type = "checkbox";
+      rowCheckbox.className = "row-checkbox";
+      rowCheckbox.value = rowIndex;
+      checkboxTd.appendChild(rowCheckbox);
+      tr.appendChild(checkboxTd);
+
+      headers.forEach((header) => {
+        const td = document.createElement("td");
+        const cellValue = record ? record[header] : undefined;
+        td.textContent = cellValue || "";
+        td.setAttribute("data-column", header);
+
+        if (header.includes("Date") || header.includes("تاريخ")) {
+          td.setAttribute("data-date", cellValue);
+        }
+
+        tr.appendChild(td);
+      });
+
+      const actionsTd = document.createElement("td");
+      actionsTd.className = "row-actions";
+      actionsTd.dataset.column = "actions";
+
+      const editBtn = document.createElement("button");
+      editBtn.className = "edit-btn";
+      editBtn.innerHTML = '<i class="fas fa-edit"></i> تعديل';
+      editBtn.onclick = (e) => {
+        e.stopPropagation();
+        openEditFormForRow(row, headers, subTabConfig);
+      };
+
+      actionsTd.appendChild(editBtn);
+      tr.appendChild(actionsTd);
+
+      tr.onclick = (e) => {
+        if (
+          !e.target.matches('input[type="checkbox"]') &&
+          !e.target.closest(".row-actions")
+        ) {
+          openEditFormForRow(row, headers, subTabConfig);
+        }
+      };
+
+      return tr;
+    }
+
+    function openEditFormForRow(
+      rowOrRecord,
+      headersOrSubTabConfig,
+      maybeSubTabConfig
+    ) {
+      const headers = Array.isArray(headersOrSubTabConfig)
+        ? headersOrSubTabConfig
+        : [];
+      const subTabConfig = Array.isArray(headersOrSubTabConfig)
+        ? maybeSubTabConfig
+        : headersOrSubTabConfig;
+
+      const record = coerceRowToRecord(rowOrRecord, headers);
+
+      const formConfig =
+        subTabConfig?.formConfig ||
+        window.bootstrapData?.forms?.[subTabConfig?.subId];
+      const editFormId = formConfig?.editFormId || formConfig?.formId;
+
+      if (editFormId) {
+        openFormModal(editFormId, record, subTabConfig?.subId, true);
+      } else if (typeof window.showToast === "function") {
+        window.showToast("تعذر فتح نموذج التعديل", "error");
+      }
+    }
+
+    function buildSearchFilters(subTabConfig) {
+      const filtersContainer = document.createElement("div");
+      filtersContainer.className = "search-filters-container";
+
+      if (subTabConfig?.searchBar) {
+        const searchBar = buildSearchBar();
+        filtersContainer.appendChild(searchBar);
+      }
+
+      if (
+        Array.isArray(subTabConfig?.filterOptions) &&
+        subTabConfig.filterOptions.length > 0
+      ) {
+        const filterDropdowns = buildFilterDropdowns(
+          subTabConfig.filterOptions
+        );
+        filtersContainer.appendChild(filterDropdowns);
+      }
+
+      return filtersContainer;
+    }
+
+    function buildSearchBar() {
+      const searchContainer = document.createElement("div");
+      searchContainer.className = "search-bar-container";
+
+      const searchInput = document.createElement("input");
+      searchInput.type = "text";
+      searchInput.placeholder = "ابحث...";
+      searchInput.className = "search-input";
+
+      const fromDate = document.createElement("input");
+      fromDate.type = "date";
+      fromDate.className = "date-filter from-date";
+      fromDate.placeholder = "من تاريخ";
+
+      const toDate = document.createElement("input");
+      toDate.type = "date";
+      toDate.className = "date-filter to-date";
+      toDate.placeholder = "إلى تاريخ";
+
+      let searchTimeout;
+      searchInput.addEventListener("input", (event) => {
+        const value = event.target.value;
+        clearTimeout(searchTimeout);
+        searchTimeout = window.setTimeout(() => {
+          performSearch(value, fromDate.value, toDate.value);
+        }, 300);
+      });
+
+      [fromDate, toDate].forEach((input) => {
+        input.addEventListener("change", () => {
+          performSearch(searchInput.value, fromDate.value, toDate.value);
+        });
+      });
+
+      searchContainer.appendChild(searchInput);
+      searchContainer.appendChild(fromDate);
+      searchContainer.appendChild(toDate);
+
+      return searchContainer;
+    }
+
+    function buildFilterDropdowns(filterOptions) {
+      const filtersContainer = document.createElement("div");
+      filtersContainer.className = "filter-dropdowns-container";
+
+      filterOptions.forEach((filter) => {
+        const filterGroup = document.createElement("div");
+        filterGroup.className = "filter-group";
+
+        const label = document.createElement("label");
+        label.textContent = filter.label;
+        label.htmlFor = `filter-${filter.column}`;
+
+        const select = document.createElement("select");
+        select.id = `filter-${filter.column}`;
+        select.className = "filter-select";
+        select.dataset.column = filter.column;
+
+        const defaultOption = document.createElement("option");
+        defaultOption.value = "";
+        defaultOption.textContent = `كل ${filter.label}`;
+        select.appendChild(defaultOption);
+
+        if (Array.isArray(filter.options)) {
+          filter.options.forEach((option) => {
+            const optionElement = document.createElement("option");
+            optionElement.value = option.value;
+            optionElement.textContent = option.label;
+            select.appendChild(optionElement);
+          });
+        }
+
+        select.addEventListener("change", applyFilters);
+
+        filterGroup.appendChild(label);
+        filterGroup.appendChild(select);
+        filtersContainer.appendChild(filterGroup);
+      });
+
+      return filtersContainer;
+    }
+
+    function performSearch(searchTerm = "", fromDate = "", toDate = "") {
+      const table = document.querySelector(".dynamic-data-table");
+      if (!table) {
+        return;
+      }
+
+      const rows = table.querySelectorAll("tbody tr");
+      const searchLower = String(searchTerm || "").toLowerCase();
+
+      rows.forEach((row) => {
+        let showRow = true;
+
+        const rowText = row.textContent.toLowerCase();
+        if (searchLower && !rowText.includes(searchLower)) {
+          showRow = false;
+        }
+
+        if (fromDate || toDate) {
+          const dateCells = row.querySelectorAll("[data-date]");
+          let dateMatch = dateCells.length === 0;
+
+          dateCells.forEach((cell) => {
+            const cellDate = cell.dataset.date;
+            if (cellDate) {
+              if (
+                (fromDate && cellDate < fromDate) ||
+                (toDate && cellDate > toDate)
+              ) {
+                dateMatch = false;
+              } else {
+                dateMatch = true;
+              }
+            }
+          });
+
+          showRow = showRow && dateMatch;
+        }
+
+        row.style.display = showRow ? "" : "none";
+      });
+    }
+
+    function applyFilters() {
+      const activeFilters = {};
+      const filterSelects = document.querySelectorAll(".filter-select");
+
+      filterSelects.forEach((select) => {
+        if (select.value) {
+          activeFilters[select.dataset.column] = select.value;
+        }
+      });
+
+      filterTableData(activeFilters);
+    }
+
+    function filterTableData(filters) {
+      const table = document.querySelector(".dynamic-data-table");
+      if (!table) {
+        return;
+      }
+
+      const rows = table.querySelectorAll("tbody tr");
+
+      rows.forEach((row) => {
+        let showRow = true;
+
+        Object.keys(filters).forEach((column) => {
+          const cell = row.querySelector(`[data-column="${column}"]`);
+          if (cell) {
+            const cellValue = cell.textContent.trim();
+            if (cellValue !== String(filters[column]).trim()) {
+              showRow = false;
+            }
+          }
+        });
+
+        row.style.display = showRow ? "" : "none";
+      });
+    }
+
+    function coerceRowToRecord(row, headers) {
+      if (row && typeof row === "object" && !Array.isArray(row)) {
+        return row;
+      }
+      const record = {};
+      headers.forEach((header, index) => {
+        record[header] = Array.isArray(row) ? row[index] : undefined;
+      });
+      return record;
+    }
+
+    function normalizeDateValue(value) {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.toISOString().split("T")[0];
+      }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        const isoMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})/);
+        if (isoMatch) {
+          return isoMatch[1];
+        }
+        const slashMatch = trimmed.match(/^(\d{4})[\/](\d{2})[\/](\d{2})/);
+        if (slashMatch) {
+          return `${slashMatch[1]}-${slashMatch[2]}-${slashMatch[3]}`;
+        }
+      }
+      return "";
+    }
+
+    viewTab.buildDynamicViewPad = buildDynamicViewPad;
+    viewTab.performBulkAction = performBulkAction;
+    viewTab.performSearch = performSearch;
+    viewTab.applyFilters = applyFilters;
+    viewTab.filterTableData = filterTableData;
+  })(window);
+</script>

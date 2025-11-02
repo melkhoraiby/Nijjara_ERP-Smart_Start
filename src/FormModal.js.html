@@ -1,0 +1,783 @@
+<script>
+  (function (window) {
+    "use strict";
+
+    const formModal = window.formModal || (window.formModal = {});
+    const sectionMetaMap = new Map();
+    const modalState = {
+      modal: null,
+      currentFormId: null,
+      subTabId: null,
+      recordData: null,
+      isEditMode: false,
+      formStructure: [],
+    };
+
+    function getModal() {
+      if (modalState.modal && document.body.contains(modalState.modal)) {
+        return modalState.modal;
+      }
+      modalState.modal = document.getElementById("globalFormModal");
+      return modalState.modal;
+    }
+
+    function openFormModal(formId, recordData, subTabId, isEditMode = false) {
+      const modal = getModal() || createGlobalModal();
+
+      window.currentFormId = formId || null;
+      window.currentSubTab = subTabId || null;
+
+      modalState.currentFormId = formId;
+      modalState.recordData = recordData || null;
+      modalState.subTabId = subTabId || null;
+      modalState.isEditMode = !!isEditMode;
+
+      modal.style.display = "flex";
+      setModalLoadingState(true);
+      loadFormData(formId, recordData, subTabId, isEditMode);
+    }
+
+    function createGlobalModal() {
+      const modal = document.createElement("div");
+      modal.id = "globalFormModal";
+      modal.className = "global-modal";
+
+      modal.innerHTML = `
+        <div class="modal-backdrop"></div>
+        <div class="modal-container">
+            <div class="modal-header">
+                <h3 class="modal-title"></h3>
+                <button class="close-modal" type="button">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="vertical-tabs-container">
+                    <div class="vertical-tabs-nav"></div>
+                    <div class="vertical-tabs-content"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary cancel-btn" type="button">إلغاء</button>
+                <button class="btn-primary submit-btn" type="button">حفظ</button>
+            </div>
+        </div>
+    `;
+
+      document.body.appendChild(modal);
+      modalState.modal = modal;
+
+      modal.querySelector(".close-modal").addEventListener("click", closeModal);
+      modal.querySelector(".cancel-btn").addEventListener("click", closeModal);
+      modal
+        .querySelector(".modal-backdrop")
+        .addEventListener("click", closeModal);
+      modal
+        .querySelector(".submit-btn")
+        .addEventListener("click", handleModalSubmit);
+
+      return modal;
+    }
+
+    function closeModal() {
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+
+      modal.style.display = "none";
+      const tabsNav = modal.querySelector(".vertical-tabs-nav");
+      const tabsContent = modal.querySelector(".vertical-tabs-content");
+      if (tabsNav) {
+        tabsNav.innerHTML = "";
+      }
+      if (tabsContent) {
+        tabsContent.innerHTML = "";
+      }
+
+      modalState.currentFormId = null;
+      modalState.formStructure = [];
+      modalState.recordData = null;
+      modalState.subTabId = null;
+      modalState.isEditMode = false;
+      modal.classList.remove("is-loading");
+
+      window.currentFormId = null;
+      window.currentFormStructure = null;
+      window.currentSubTab = null;
+    }
+
+    function buildFormFields(
+      formStructure,
+      recordData = null,
+      isEditMode = false
+    ) {
+      const fieldsContainer = document.createElement("div");
+      fieldsContainer.className = "form-fields-container";
+
+      const fieldsBySection = groupFieldsBySection(formStructure);
+
+      Object.keys(fieldsBySection).forEach((sectionId) => {
+        const section = document.createElement("div");
+        section.className = "form-section";
+        section.dataset.sectionId = sectionId;
+
+        const sectionFields = fieldsBySection[sectionId];
+        sectionFields.forEach((field) => {
+          const shouldShow =
+            field.show !== false &&
+            field.show !== "false" &&
+            field.show !== "FALSE";
+          if (!shouldShow) {
+            return;
+          }
+
+          if (!section.dataset.tabName && field.tabName) {
+            section.dataset.tabName = field.tabName;
+          }
+          if (!section.dataset.sectionLabel) {
+            section.dataset.sectionLabel =
+              field.section || field.tabName || field.tabId || "تفاصيل";
+          }
+
+          const fieldElement = createFormField(field, recordData, isEditMode);
+          if (fieldElement) {
+            section.appendChild(fieldElement);
+          }
+        });
+
+        if (section.children.length > 0) {
+          fieldsContainer.appendChild(section);
+        }
+      });
+
+      return fieldsContainer;
+    }
+
+    function groupFieldsBySection(formStructure) {
+      const groups = {};
+      sectionMetaMap.clear();
+
+      if (!Array.isArray(formStructure)) {
+        return groups;
+      }
+
+      formStructure.forEach((field) => {
+        const sectionId = field.tabId || field.Tab_ID || "general";
+        if (!groups[sectionId]) {
+          groups[sectionId] = [];
+        }
+        groups[sectionId].push(field);
+
+        const existingMeta = sectionMetaMap.get(sectionId) || {
+          tabId: sectionId,
+          tabName: "",
+          section: "",
+        };
+        if (!existingMeta.tabName && field.tabName) {
+          existingMeta.tabName = field.tabName;
+        }
+        if (!existingMeta.section && field.section) {
+          existingMeta.section = field.section;
+        }
+        sectionMetaMap.set(sectionId, existingMeta);
+      });
+
+      return groups;
+    }
+
+    function loadFormData(formId, recordData, subTabId, isEditMode) {
+      const modal = getModal();
+      if (!(window.google && google.script && google.script.run)) {
+        setModalLoadingState(false);
+        if (modal) {
+          const content = modal.querySelector(".vertical-tabs-content");
+          if (content) {
+            content.innerHTML =
+              '<p class="error-text">خدمة Google Apps Script غير متاحة حالياً.</p>';
+          }
+        }
+        return;
+      }
+
+      const recordId = extractRecordId(recordData);
+
+      google.script.run
+        .withSuccessHandler((response) => {
+          setModalLoadingState(false);
+          if (response && response.success) {
+            renderFormInModal(
+              response.formStructure,
+              response.recordData,
+              !!response.isEdit,
+              subTabId
+            );
+          } else {
+            showModalError(response?.message || "Failed to load form.");
+          }
+        })
+        .withFailureHandler((error) => {
+          setModalLoadingState(false);
+          showModalError(error?.message || "Error loading form data.");
+        })
+        .getFormWithRecordData(formId, recordId, subTabId);
+    }
+
+    function renderFormInModal(
+      formStructure,
+      recordData,
+      isEditMode,
+      subTabId
+    ) {
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+
+      modalState.formStructure = Array.isArray(formStructure)
+        ? formStructure
+        : [];
+      modalState.recordData = recordData || modalState.recordData;
+      modalState.isEditMode = !!isEditMode;
+      modalState.subTabId = subTabId || modalState.subTabId;
+
+      window.currentFormId = modalState.currentFormId;
+      window.currentFormStructure = modalState.formStructure;
+      window.currentSubTab = modalState.subTabId;
+
+      const modalTitle = modal.querySelector(".modal-title");
+      if (modalTitle) {
+        modalTitle.textContent = resolveFormTitle(
+          formStructure,
+          modalState.subTabId,
+          modalState.isEditMode
+        );
+      }
+
+      const tabsNav = modal.querySelector(".vertical-tabs-nav");
+      const tabsContent = modal.querySelector(".vertical-tabs-content");
+      const built = buildModalContent(
+        tabsNav,
+        tabsContent,
+        formStructure,
+        recordData,
+        modalState.isEditMode
+      );
+      if (!built && tabsContent) {
+        tabsContent.innerHTML =
+          '<p class="muted">لم يتم العثور على حقول لهذا النموذج.</p>';
+      }
+    }
+
+    function buildModalContent(
+      tabsNav,
+      tabsContent,
+      formStructure,
+      recordData,
+      isEditMode
+    ) {
+      if (!tabsNav || !tabsContent) {
+        return false;
+      }
+
+      tabsNav.innerHTML = "";
+      tabsContent.innerHTML = "";
+
+      if (!Array.isArray(formStructure) || !formStructure.length) {
+        return false;
+      }
+
+      const fieldsContainer = buildFormFields(
+        formStructure,
+        recordData,
+        isEditMode
+      );
+      const sections = Array.from(
+        fieldsContainer.querySelectorAll(".form-section")
+      );
+      if (!sections.length) {
+        return false;
+      }
+
+      const navFragment = document.createDocumentFragment();
+      const panelsFragment = document.createDocumentFragment();
+
+      sections.forEach((section, index) => {
+        const sectionId = section.dataset.sectionId || `section-${index}`;
+        const meta = sectionMetaMap.get(sectionId) || {};
+        const label =
+          section.dataset.tabName ||
+          meta.tabName ||
+          section.dataset.sectionLabel ||
+          meta.section ||
+          `تبويب ${index + 1}`;
+
+        const tabButton = document.createElement("button");
+        tabButton.type = "button";
+        tabButton.className = "vertical-tab-btn vertical-tab-button";
+        tabButton.dataset.sectionId = sectionId;
+        tabButton.textContent = label;
+        tabButton.addEventListener("click", () => setActiveSection(sectionId));
+
+        const panel = document.createElement("div");
+        panel.className = "vertical-tab-panel tab-content";
+        panel.dataset.sectionId = sectionId;
+        panel.appendChild(section);
+
+        if (index === 0) {
+          tabButton.classList.add("is-active", "active");
+          panel.classList.add("active");
+          panel.style.display = "";
+        } else {
+          panel.style.display = "none";
+        }
+
+        navFragment.appendChild(tabButton);
+        panelsFragment.appendChild(panel);
+      });
+
+      tabsNav.appendChild(navFragment);
+      tabsContent.appendChild(panelsFragment);
+      return true;
+    }
+
+    function createFormField(field, recordData, isEditMode) {
+      if (!field) {
+        return null;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "form-field";
+      if (field.fieldId) {
+        wrapper.dataset.fieldId = field.fieldId;
+      }
+      if (field.required) {
+        wrapper.classList.add("required");
+        wrapper.dataset.required = "true";
+      }
+
+      const label = document.createElement("label");
+      label.className = "form-field-label";
+      const inputId = `form-field-${(
+        field.fieldId ||
+        field.targetColumn ||
+        field.label ||
+        "field"
+      )
+        .toString()
+        .replace(/\s+/g, "-")
+        .toLowerCase()}`;
+      label.htmlFor = inputId;
+      label.textContent =
+        field.label || field.fieldId || field.targetColumn || "حقل";
+
+      const type = String(field.type || "text").toLowerCase();
+      let input;
+
+      if (type === "textarea" || type === "paragraph") {
+        input = document.createElement("textarea");
+        input.rows = 4;
+      } else if (type === "dropdown" || type === "select") {
+        input = document.createElement("select");
+      } else if (type === "checkbox" || type === "boolean") {
+        input = document.createElement("input");
+        input.type = "checkbox";
+      } else {
+        input = document.createElement("input");
+        if (type === "date") {
+          input.type = "date";
+        } else if (type === "number") {
+          input.type = "number";
+        } else if (type === "email") {
+          input.type = "email";
+        } else {
+          input.type = "text";
+        }
+      }
+
+      const fieldName = resolveFieldName(field);
+      const primaryName = field.fieldId || field.targetColumn || fieldName;
+      input.name = primaryName ? String(primaryName).trim() : fieldName;
+      input.id = inputId;
+      input.dataset.fieldName = fieldName;
+      input.dataset.fieldType = type;
+      input.dataset.targetColumn = field.targetColumn || "";
+      if (field.fieldId) {
+        input.dataset.fieldId = field.fieldId;
+      }
+      input.dataset.label = label.textContent;
+      if (field.placeholder) {
+        input.placeholder = field.placeholder;
+      }
+
+      if (field.required) {
+        input.required = true;
+        input.dataset.required = "true";
+      }
+
+      if (field.readOnly || (type === "auto" && !isEditMode)) {
+        input.readOnly = true;
+        input.classList.add("is-readonly");
+      }
+
+      const resolvedValue = resolveFieldValue(field, recordData, isEditMode);
+      if (type === "checkbox" || type === "boolean") {
+        input.checked = parseBoolean(resolvedValue);
+      } else if (
+        resolvedValue !== undefined &&
+        resolvedValue !== null &&
+        resolvedValue !== ""
+      ) {
+        input.value = resolvedValue;
+      } else if (!isEditMode && field.defaultValue != null) {
+        input.value = field.defaultValue;
+      }
+
+      if (type === "dropdown" || type === "select") {
+        populateDropdownOptions(input, field, resolvedValue);
+      }
+
+      wrapper.appendChild(label);
+      wrapper.appendChild(input);
+      return wrapper;
+    }
+
+    function populateDropdownOptions(select, field, selectedValue) {
+      if (!(select instanceof HTMLSelectElement)) {
+        return;
+      }
+
+      select.innerHTML = "";
+
+      if (!field.required) {
+        const blankOption = document.createElement("option");
+        blankOption.value = "";
+        blankOption.textContent = "—";
+        select.appendChild(blankOption);
+      }
+
+      const addOptions = (options) => {
+        const list = Array.isArray(options) ? options : [];
+        list.forEach((option) => {
+          const optionElement = document.createElement("option");
+          optionElement.value =
+            option.value != null ? String(option.value) : "";
+          optionElement.textContent = option.label || option.value || "";
+          select.appendChild(optionElement);
+        });
+        if (selectedValue != null && selectedValue !== "") {
+          const asString = String(selectedValue);
+          const matchingOption = Array.from(select.options).find(
+            (opt) => opt.value === asString
+          );
+          if (matchingOption) {
+            select.value = asString;
+          }
+        }
+      };
+
+      if (Array.isArray(field.options) && field.options.length) {
+        addOptions(field.options);
+        return;
+      }
+
+      const sourceKey = field.sourceKey || field.Dropdown_Key || "";
+      if (
+        !sourceKey ||
+        !(window.google && google.script && google.script.run)
+      ) {
+        return;
+      }
+
+      select.disabled = true;
+      google.script.run
+        .withSuccessHandler((response) => {
+          addOptions(response);
+          select.disabled = false;
+        })
+        .withFailureHandler(() => {
+          select.disabled = false;
+        })
+        .getDropdownOptions(sourceKey);
+    }
+
+    function resolveFieldName(field) {
+      const candidates = [field.targetColumn, field.fieldId, field.label];
+      for (const candidate of candidates) {
+        if (candidate) {
+          return String(candidate).trim().replace(/\s+/g, "_");
+        }
+      }
+      return "field";
+    }
+
+    function resolveFieldValue(field, recordData, isEditMode) {
+      if (recordData && typeof recordData === "object") {
+        const value = pickRecordValue(recordData, field);
+        if (value !== undefined && value !== null && value !== "") {
+          return value;
+        }
+      }
+
+      if (
+        !isEditMode &&
+        field.defaultValue != null &&
+        field.defaultValue !== ""
+      ) {
+        return field.defaultValue;
+      }
+
+      return "";
+    }
+
+    function pickRecordValue(recordData, field) {
+      const normalizedRecord = new Map();
+      Object.keys(recordData).forEach((key) => {
+        const value = recordData[key];
+        normalizedRecord.set(key, value);
+        normalizedRecord.set(
+          key.toString().trim().replace(/\s+/g, "_").toLowerCase(),
+          value
+        );
+      });
+
+      const candidates = [field.targetColumn, field.fieldId, field.label]
+        .filter(Boolean)
+        .map((item) => item.toString());
+
+      for (const candidate of candidates) {
+        if (normalizedRecord.has(candidate)) {
+          return normalizedRecord.get(candidate);
+        }
+        const normalized = candidate.trim().replace(/\s+/g, "_").toLowerCase();
+        if (normalizedRecord.has(normalized)) {
+          return normalizedRecord.get(normalized);
+        }
+      }
+      return undefined;
+    }
+
+    function parseBoolean(value) {
+      if (value === true || value === false) {
+        return value;
+      }
+      const text = String(value ?? "")
+        .trim()
+        .toLowerCase();
+      if (!text) {
+        return false;
+      }
+      return ["1", "true", "yes", "y", "نعم", "نشط"].includes(text);
+    }
+
+    function setActiveSection(sectionId) {
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+      const navButtons = modal.querySelectorAll(".vertical-tabs-nav button");
+      const panels = modal.querySelectorAll(
+        ".vertical-tabs-content .vertical-tab-panel"
+      );
+
+      navButtons.forEach((button) => {
+        const isMatch = button.dataset.sectionId === sectionId;
+        button.classList.toggle("is-active", isMatch);
+        button.classList.toggle("active", isMatch);
+      });
+
+      panels.forEach((panel) => {
+        const isMatch = panel.dataset.sectionId === sectionId;
+        panel.style.display = isMatch ? "" : "none";
+        panel.classList.toggle("active", isMatch);
+      });
+    }
+
+    function handleModalSubmit(event) {
+      event.preventDefault();
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+
+      if (!(window.google && google.script && google.script.run)) {
+        if (typeof window.showToast === "function") {
+          window.showToast("خدمة Google Apps Script غير متاحة.", "error");
+        }
+        return;
+      }
+
+      const fieldsContainer = modal.querySelector(".form-fields-container");
+      if (!fieldsContainer) {
+        return;
+      }
+
+      const payload = {};
+      const inputs = fieldsContainer.querySelectorAll(
+        "input, select, textarea"
+      );
+      inputs.forEach((input) => {
+        const key =
+          input.dataset.targetColumn || input.dataset.fieldName || input.name;
+        if (!key) {
+          return;
+        }
+        const value = input.type === "checkbox" ? input.checked : input.value;
+        payload[key] = value;
+
+        const fieldId = input.dataset.fieldId;
+        if (fieldId && !(fieldId in payload)) {
+          payload[fieldId] = value;
+        }
+
+        const fieldName = input.dataset.fieldName;
+        if (fieldName && !(fieldName in payload)) {
+          payload[fieldName] = value;
+        }
+
+        if (input.name && !(input.name in payload)) {
+          payload[input.name] = value;
+        }
+      });
+
+      const recordId = extractRecordId(modalState.recordData);
+      if (modalState.isEditMode && recordId != null) {
+        payload.Record_ID = recordId;
+      }
+
+      const submitBtn = modal.querySelector(".submit-btn");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.originalText =
+          submitBtn.dataset.originalText || submitBtn.textContent;
+        submitBtn.textContent = "جارٍ الحفظ...";
+      }
+
+      google.script.run
+        .withSuccessHandler((response) => {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = submitBtn.dataset.originalText || "حفظ";
+          }
+          const success = response?.success !== false;
+          if (typeof window.showToast === "function") {
+            window.showToast(
+              response?.message ||
+                (success ? "تم حفظ البيانات بنجاح." : "تعذر حفظ البيانات."),
+              success ? "success" : "error"
+            );
+          }
+          const detail = {
+            subTabId: modalState.subTabId,
+            formId: modalState.currentFormId,
+            response,
+            payload,
+          };
+          document.dispatchEvent(
+            new CustomEvent("formModal:submitted", { detail })
+          );
+          if (success) {
+            closeModal();
+          }
+        })
+        .withFailureHandler((error) => {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = submitBtn.dataset.originalText || "حفظ";
+          }
+          if (typeof window.showToast === "function") {
+            window.showToast(
+              "تعذر حفظ البيانات: " + (error?.message || ""),
+              "error"
+            );
+          }
+        })
+        .submitDynamicForm(modalState.currentFormId, payload, {
+          subTabId: modalState.subTabId,
+          isEditMode: modalState.isEditMode,
+          recordId,
+        });
+    }
+
+    function extractRecordId(recordData) {
+      if (!recordData || typeof recordData !== "object") {
+        return null;
+      }
+      const candidates = ["ID", "Id", "id", "Record_ID", "recordId"];
+      for (const key of candidates) {
+        if (recordData[key] != null && recordData[key] !== "") {
+          return recordData[key];
+        }
+      }
+      return null;
+    }
+
+    function setModalLoadingState(isLoading) {
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+      modal.classList.toggle("is-loading", !!isLoading);
+      const content = modal.querySelector(".vertical-tabs-content");
+      if (content && isLoading) {
+        content.innerHTML = '<p class="muted">جارٍ تحميل النموذج...</p>';
+      }
+    }
+
+    function showModalError(message) {
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+      const content = modal.querySelector(".vertical-tabs-content");
+      if (content) {
+        content.innerHTML = `<p class="error-text">${message}</p>`;
+      }
+      if (typeof window.showToast === "function") {
+        window.showToast(message, "error");
+      }
+    }
+
+    function resolveFormTitle(formStructure, subTabId, isEditMode) {
+      if (Array.isArray(formStructure) && formStructure.length) {
+        const field =
+          formStructure.find((item) => item?.formTitle) || formStructure[0];
+        if (field?.formTitle) {
+          return field.formTitle;
+        }
+      }
+
+      const formsRegister = window.bootstrapData?.forms;
+      const formConfig = formsRegister ? formsRegister[subTabId] : null;
+      if (formConfig) {
+        if (isEditMode && formConfig.editTitleAr) {
+          return formConfig.editTitleAr;
+        }
+        return (
+          formConfig.titleAr || formConfig.title || formConfig.name || "النموذج"
+        );
+      }
+
+      return isEditMode ? "تعديل السجل" : "إضافة جديد";
+    }
+
+    window.openFormModal = openFormModal;
+    window.closeFormModal = closeModal;
+    window.renderFormInModal = renderFormInModal;
+
+    formModal.buildFormFields = buildFormFields;
+    formModal.groupFieldsBySection = groupFieldsBySection;
+    formModal.createFormField = createFormField;
+    formModal.renderFormInModal = renderFormInModal;
+    formModal.open = openFormModal;
+
+    document.addEventListener("keydown", (event) => {
+      const modal = getModal();
+      if (!modal) {
+        return;
+      }
+      const isVisible = modal.style.display && modal.style.display !== "none";
+      if (event.key === "Escape" && isVisible) {
+        closeModal();
+      }
+    });
+  })(window);
+</script>

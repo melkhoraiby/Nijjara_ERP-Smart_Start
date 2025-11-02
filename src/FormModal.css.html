@@ -1,0 +1,330 @@
+<style>
+  /* FormModal.css.html - Complete CSS for Form Modal */
+
+  /* Modal Backdrop */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+    z-index: 9998;
+  }
+
+  /* Modal Container */
+  .modal-container {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 90%;
+    max-width: 900px;
+    max-height: 90vh;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Modal Header */
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+    background: #f8f9fa;
+    border-radius: 10px 10px 0 0;
+  }
+
+  .modal-title {
+    margin: 0;
+    color: #333;
+    font-size: 1.4em;
+    font-weight: bold;
+  }
+
+  .close-modal {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 5px;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .close-modal:hover {
+    background: #e9ecef;
+    color: #333;
+  }
+
+  /* Modal Body */
+  .modal-body {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    min-height: 400px;
+  }
+
+  /* Vertical Tabs Container */
+  .vertical-tabs-container {
+    display: flex;
+    height: 100%;
+    width: 100%;
+  }
+
+  /* Vertical Tabs Navigation */
+  .vertical-tabs-nav {
+    width: 200px;
+    background: #f8f9fa;
+    border-right: 1px solid #dee2e6;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .vertical-tab-button {
+    padding: 15px 20px;
+    border: none;
+    background: none;
+    text-align: right;
+    cursor: pointer;
+    border-bottom: 1px solid #e9ecef;
+    transition: all 0.3s ease;
+    font-size: 14px;
+    color: #495057;
+  }
+
+  .vertical-tab-button:hover {
+    background: #e9ecef;
+    color: #495057;
+  }
+
+  .vertical-tab-button.active {
+    background: var(--module-color, #007bff);
+    color: white;
+    border-right: 4px solid var(--module-color, #007bff);
+    font-weight: bold;
+  }
+
+  /* Vertical Tabs Content */
+  .vertical-tabs-content {
+    flex: 1;
+    padding: 30px;
+    overflow-y: auto;
+    background: white;
+  }
+
+  .tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .tab-content.active {
+    display: block;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  /* Form Fields Container */
+  .form-fields-container {
+    display: flex;
+    flex-direction: column;
+    gap: 25px;
+  }
+
+  .form-section {
+    margin-bottom: 10px;
+  }
+
+  .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .form-field label {
+    font-weight: 600;
+    color: #333;
+    margin-bottom: 5px;
+    font-size: 14px;
+  }
+
+  .form-field input,
+  .form-field select,
+  .form-field textarea {
+    padding: 12px 15px;
+    border: 2px solid #e9ecef;
+    border-radius: 6px;
+    font-size: 14px;
+    transition: all 0.3s ease;
+    background: white;
+  }
+
+  .form-field input:focus,
+  .form-field select:focus,
+  .form-field textarea:focus {
+    outline: none;
+    border-color: var(--module-color, #007bff);
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+  }
+
+  .form-field input:read-only,
+  .form-field select:read-only,
+  .form-field textarea:read-only {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    cursor: not-allowed;
+  }
+
+  .form-field input[type="checkbox"] {
+    width: auto;
+    transform: scale(1.2);
+    margin-right: 10px;
+  }
+
+  /* Required field indicator */
+  .form-field.required label::after {
+    content: " *";
+    color: #dc3545;
+  }
+
+  /* Modal Footer */
+  .modal-footer {
+    padding: 20px;
+    border-top: 1px solid #eee;
+    background: #f8f9fa;
+    border-radius: 0 0 10px 10px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .modal-footer .btn-secondary {
+    padding: 10px 20px;
+    border: 1px solid #6c757d;
+    background: white;
+    color: #6c757d;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+  }
+
+  .modal-footer .btn-secondary:hover {
+    background: #6c757d;
+    color: white;
+  }
+
+  .modal-footer .btn-primary {
+    padding: 10px 25px;
+    border: none;
+    background: var(--module-color, #007bff);
+    color: white;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+  }
+
+  .modal-footer .btn-primary:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+  }
+
+  .modal-footer .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  /* Loading States */
+  .modal-loading {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+    font-size: 16px;
+  }
+
+  .form-loading {
+    text-align: center;
+    padding: 20px;
+    color: #6c757d;
+  }
+
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .modal-container {
+      width: 95%;
+      height: 95vh;
+    }
+
+    .vertical-tabs-container {
+      flex-direction: column;
+      height: auto;
+    }
+
+    .vertical-tabs-nav {
+      width: 100%;
+      flex-direction: row;
+      overflow-x: auto;
+      border-right: none;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    .vertical-tab-button {
+      flex-shrink: 0;
+      border-bottom: none;
+      border-right: 1px solid #e9ecef;
+    }
+
+    .vertical-tab-button.active {
+      border-right: 4px solid var(--module-color, #007bff);
+      border-bottom: none;
+    }
+
+    .vertical-tabs-content {
+      padding: 20px;
+    }
+  }
+
+  /* Error States */
+  .form-field.error input,
+  .form-field.error select,
+  .form-field.error textarea {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 3px rgba(220, 53, 69, 0.1);
+  }
+
+  .error-message {
+    color: #dc3545;
+    font-size: 12px;
+    margin-top: 5px;
+  }
+
+  /* Success States */
+  .form-field.success input,
+  .form-field.success select,
+  .form-field.success textarea {
+    border-color: #28a745;
+  }
+</style>

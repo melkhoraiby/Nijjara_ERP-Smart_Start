@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nijjara ERP</title>
+  <style>
+    :root {
+      --color-bg: #101218;
+      --color-panel: rgba(18, 22, 32, 0.92);
+      --color-border: rgba(255, 255, 255, 0.12);
+      --color-text-primary: #f5f7ff;
+      --color-text-secondary: #96a3c2;
+      --color-accent: #d4af37;
+      --color-danger: #ef5b5b;
+      --color-success: #4cd17d;
+      --sidebar-width: 260px;
+      --header-height: 64px;
+      --transition-speed: 0.25s;
+      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      background: var(--color-bg);
+      color: var(--color-text-primary);
+      font-size: 16px;
+      line-height: 1.45;
+    }
+
+    body {
+      overflow: hidden;
+    }
+
+    a {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .view {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      transition: opacity var(--transition-speed) ease;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .view.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Login view */
+    .login-view {
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at 20% 20%, rgba(212, 175, 55, 0.12), transparent),
+        radial-gradient(circle at 80% 0%, rgba(74, 144, 226, 0.12), transparent),
+        radial-gradient(circle at 50% 80%, rgba(255, 255, 255, 0.08), transparent),
+        #080b13;
+      padding: 24px;
+    }
+
+    .login-card {
+      width: min(420px, 90vw);
+      background: rgba(15, 18, 26, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      backdrop-filter: blur(14px);
+      padding: 40px 36px;
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55);
+      position: relative;
+    }
+
+    .login-card::after {
+      content: "";
+      position: absolute;
+      inset: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 12px;
+      pointer-events: none;
+      opacity: 0.6;
+    }
+
+    .login-card h1 {
+      margin: 0;
+      font-size: 1.9rem;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 12px;
+      letter-spacing: 0.02em;
+    }
+
+    .login-card h1 span {
+      color: var(--color-accent);
+    }
+
+    .login-card p {
+      margin: 0;
+      text-align: center;
+      color: var(--color-text-secondary);
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .form-group label {
+      font-size: 0.9rem;
+      color: var(--color-text-secondary);
+    }
+
+    .form-group input {
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--color-text-primary);
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .form-group input:focus {
+      outline: none;
+      border-color: rgba(212, 175, 55, 0.6);
+      box-shadow: 0 0 0 3px rgba(212, 175, 55, 0.15);
+    }
+
+    .form-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 999px;
+      padding: 12px 18px;
+      font-weight: 600;
+      color: #0d1018;
+      background: linear-gradient(135deg, var(--color-accent), #f8d35d);
+      box-shadow: 0 18px 32px rgba(212, 175, 55, 0.25);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 22px 36px rgba(212, 175, 55, 0.28);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    .error-banner {
+      display: none;
+      border-radius: 12px;
+      padding: 12px 14px;
+      border: 1px solid rgba(239, 91, 91, 0.35);
+      background: rgba(239, 91, 91, 0.12);
+      color: var(--color-danger);
+      font-size: 0.85rem;
+    }
+
+    .error-banner.visible {
+      display: block;
+    }
+
+    /* Workspace layout */
+    .workspace-view {
+      opacity: 0;
+    }
+
+    .workspace-view.active {
+      opacity: 1;
+    }
+
+    .workspace-shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-width) 1fr;
+      grid-template-rows: auto 1fr;
+      height: 100%;
+    }
+
+    .app-header {
+      grid-column: 1 / -1;
+      height: var(--header-height);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      background: rgba(12, 15, 22, 0.9);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      backdrop-filter: blur(22px);
+      z-index: 2;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .brand::before {
+      content: "";
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(212, 175, 55, 0.85), rgba(15, 18, 26, 0.6));
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 12px 18px rgba(212, 175, 55, 0.22);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .command-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.05);
+      color: var(--color-text-secondary);
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .command-trigger:hover {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.2);
+    }
+
+    .keyboard-hint {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(12, 14, 20, 0.4);
+      color: var(--color-text-secondary);
+    }
+
+    .user-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 8px 14px;
+      border-radius: 999px;
+      font-size: 0.9rem;
+    }
+
+    .sign-out-btn {
+      border: none;
+      background: transparent;
+      color: var(--color-text-secondary);
+      font-size: 0.85rem;
+      padding: 0;
+    }
+
+    .sign-out-btn:hover {
+      color: var(--color-text-primary);
+      text-decoration: underline;
+    }
+
+    .nav-sidebar {
+      background: rgba(11, 14, 20, 0.8);
+      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      padding: 18px 16px;
+      overflow-y: auto;
+      backdrop-filter: blur(18px);
+    }
+
+    .nav-section-title {
+      font-size: 0.78rem;
+      letter-spacing: 0.12em;
+      color: var(--color-text-secondary);
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    .tab-group {
+      margin-bottom: 18px;
+    }
+
+    .tab-button {
+      width: 100%;
+      text-align: left;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.04);
+      color: var(--color-text-primary);
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.2s ease, border-color 0.2s ease;
+    }
+
+    .tab-button:hover {
+      background: rgba(255, 255, 255, 0.08);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .tab-button.active {
+      background: rgba(212, 175, 55, 0.12);
+      border-color: rgba(212, 175, 55, 0.4);
+      color: var(--color-accent);
+    }
+
+    .sub-tab-list {
+      list-style: none;
+      padding: 8px 0 4px 8px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .sub-tab-button {
+      width: 100%;
+      text-align: left;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--color-text-secondary);
+      font-size: 0.92rem;
+      transition: background 0.15s ease, color 0.15s ease, border-color 0.15s;
+    }
+
+    .sub-tab-button:hover {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--color-text-primary);
+    }
+
+    .sub-tab-button.active {
+      background: rgba(212, 175, 55, 0.15);
+      border-color: rgba(212, 175, 55, 0.35);
+      color: var(--color-accent);
+    }
+
+    .main-content {
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(140deg, rgba(255, 255, 255, 0.05), rgba(10, 12, 20, 0.92));
+      padding: 28px;
+    }
+
+    .content-panel {
+      width: 100%;
+      height: 100%;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      background: rgba(10, 12, 18, 0.72);
+      backdrop-filter: blur(18px);
+      padding: 24px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .content-panel.loading::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(8, 10, 16, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 2;
+    }
+
+    .content-panel.loading::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 54px;
+      height: 54px;
+      border-radius: 50%;
+      border: 4px solid rgba(255, 255, 255, 0.08);
+      border-top-color: var(--color-accent);
+      animation: spin 1s linear infinite;
+      transform: translate(-50%, -50%);
+      z-index: 3;
+    }
+
+    .workspace-title {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin: 0 0 18px 0;
+      color: var(--color-text-secondary);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .empty-state {
+      margin: auto;
+      text-align: center;
+      max-width: 420px;
+      color: var(--color-text-secondary);
+      line-height: 1.6;
+    }
+
+    .empty-state h2 {
+      font-size: 1.35rem;
+      margin-bottom: 12px;
+      color: var(--color-text-primary);
+    }
+
+    #global-modal-container {
+      position: relative;
+      z-index: 20;
+    }
+
+    #command-palette-root {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      pointer-events: none;
+    }
+
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 50;
+    }
+
+    .toast {
+      min-width: 260px;
+      border-radius: 12px;
+      padding: 12px 16px;
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(12, 16, 26, 0.88);
+      color: var(--color-text-primary);
+      box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      opacity: 0;
+      transform: translateY(10px);
+      animation: toast-in 0.28s ease forwards;
+    }
+
+    .toast.toast-success {
+      border-color: rgba(76, 209, 125, 0.35);
+    }
+
+    .toast.toast-error {
+      border-color: rgba(239, 91, 91, 0.45);
+    }
+
+    .toast.toast-warning {
+      border-color: rgba(250, 173, 20, 0.45);
+    }
+
+    @keyframes toast-in {
+      from {
+        opacity: 0;
+        transform: translateY(12px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    @media (max-width: 1024px) {
+      :root {
+        --sidebar-width: 220px;
+      }
+
+      .workspace-shell {
+        grid-template-columns: var(--sidebar-width) 1fr;
+      }
+    }
+
+    @media (max-width: 768px) {
+      body {
+        overflow: auto;
+      }
+
+      .workspace-shell {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .nav-sidebar {
+        display: none;
+      }
+
+      .main-content {
+        padding: 18px;
+      }
+    }
+  </style>
+  <?!= include('ViewTab.css') ?>
+  <?!= include('FormModal.css') ?>
+</head>
+<body>
+  <div id="app-root">
+    <section id="login-view" class="view login-view active">
+      <div class="login-card">
+        <h1>Nijjara <span>ERP</span></h1>
+        <p>Sign in to activate the command workspace.</p>
+        <form id="login-form" novalidate>
+          <div class="form-group">
+            <label for="login-email">Email</label>
+            <input id="login-email" name="email" type="email" placeholder="user@company.com" autocomplete="email" required />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input id="login-password" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
+          </div>
+          <div id="login-error" class="error-banner" role="alert"></div>
+          <div class="form-actions">
+            <button id="login-submit" class="btn" type="submit">Sign in</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="workspace-view" class="view workspace-view">
+      <div class="workspace-shell">
+        <header class="app-header">
+          <div class="brand">Nijjara Command Workspace</div>
+          <div class="header-actions">
+            <button id="command-palette-trigger" class="command-trigger" type="button">
+              <span>Command Palette</span>
+              <span class="keyboard-hint">Ctrl + K</span>
+            </button>
+            <div class="user-badge">
+              <span id="current-user-name">Guest</span>
+              <button id="sign-out-button" class="sign-out-btn" type="button">Sign out</button>
+            </div>
+          </div>
+        </header>
+
+        <aside class="nav-sidebar">
+          <div class="nav-section-title">Modules</div>
+          <div id="tab-nav"></div>
+        </aside>
+
+        <main id="main-content-area" class="main-content">
+          <div id="content-panel" class="content-panel">
+            <h2 id="workspace-title" class="workspace-title">Command Workspace</h2>
+            <div id="workspace-empty-state" class="empty-state">
+              <h2>Welcome</h2>
+              <p>Use the command palette (<strong>Ctrl + K</strong>) or select a module from the navigation to begin.</p>
+            </div>
+          </div>
+        </main>
+      </div>
+    </section>
+  </div>
+
+  <div id="global-modal-container"></div>
+  <div id="command-palette-root"></div>
+  <div id="toast-container" class="toast-container"></div>
+
+  <?!= include('CommandPalette.js') ?>
+  <?!= include('ViewTab.js') ?>
+  <?!= include('FormModal.js') ?>
+
+  <script>
+    (function (window) {
+      "use strict";
+
+      const state = {
+        sessionToken: null,
+        user: null,
+        bootstrap: null,
+        activeTabId: null,
+        activeSubTabId: null,
+      };
+
+      const loginView = document.getElementById("login-view");
+      const workspaceView = document.getElementById("workspace-view");
+      const loginForm = document.getElementById("login-form");
+      const loginSubmit = document.getElementById("login-submit");
+      const loginError = document.getElementById("login-error");
+      const emailInput = document.getElementById("login-email");
+      const passwordInput = document.getElementById("login-password");
+      const tabNav = document.getElementById("tab-nav");
+      const workspaceTitle = document.getElementById("workspace-title");
+      const contentPanel = document.getElementById("content-panel");
+      const emptyState = document.getElementById("workspace-empty-state");
+      const currentUserName = document.getElementById("current-user-name");
+      const signOutButton = document.getElementById("sign-out-button");
+      const commandTrigger = document.getElementById("command-palette-trigger");
+      const toastContainer = document.getElementById("toast-container");
+
+      const scriptRunner = (window.google && google.script && google.script.run) || null;
+
+      function init() {
+        loginForm.addEventListener("submit", handleLoginSubmit);
+        signOutButton.addEventListener("click", handleSignOut);
+        commandTrigger.addEventListener("click", () => window.commandPalette?.open());
+        document.addEventListener("keydown", handleGlobalKeydown);
+        window.showToast = showToast;
+        window.loadSubTabContent = loadSubTabContent;
+        window.refreshActiveSubTab = refreshActiveSubTab;
+        window.openCommandPalette = () => window.commandPalette?.open();
+      }
+
+      function handleLoginSubmit(event) {
+        event.preventDefault();
+        if (!scriptRunner) {
+          showToast("Google Apps Script context is unavailable.", "error");
+          return;
+        }
+
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+        if (!email || !password) {
+          setLoginError("Please provide both email and password.");
+          return;
+        }
+
+        setLoginError("");
+        setLoginLoading(true);
+
+        scriptRunner
+          .withSuccessHandler((authResult) => {
+            if (!authResult || !authResult.authenticated) {
+              setLoginLoading(false);
+              setLoginError("Invalid credentials. Please try again.");
+              return;
+            }
+
+            scriptRunner
+              .withSuccessHandler((token) => {
+                state.sessionToken = token;
+                const userPayload = {
+                  email,
+                  role: authResult.role || "user",
+                };
+                bootstrapWorkspace(userPayload);
+              })
+              .withFailureHandler(handleLoginFailure)
+              .createSession(email);
+          })
+          .withFailureHandler(handleLoginFailure)
+          .authenticateUser(email, password);
+      }
+
+      function handleLoginFailure(err) {
+        setLoginLoading(false);
+        const message = err && err.message ? String(err.message) : "Login failed.";
+        setLoginError(message);
+      }
+
+      function setLoginLoading(isLoading) {
+        loginSubmit.disabled = isLoading;
+        loginSubmit.textContent = isLoading ? "Signing in..." : "Sign in";
+      }
+
+      function setLoginError(message) {
+        if (!message) {
+          loginError.textContent = "";
+          loginError.classList.remove("visible");
+          return;
+        }
+        loginError.textContent = message;
+        loginError.classList.add("visible");
+      }
+
+      function bootstrapWorkspace(userPayload) {
+        scriptRunner
+          .withSuccessHandler((payload) => {
+            setLoginLoading(false);
+            state.bootstrap = payload || {};
+            state.user = payload?.user || userPayload || null;
+            window.ERP_STATE = {
+              sessionToken: state.sessionToken,
+              user: state.user,
+              bootstrap: state.bootstrap,
+            };
+            window.bootstrapData = payload || {};
+            transitionToWorkspace();
+            renderUserBadge();
+            renderNavigation();
+            ensureCommandPalette();
+            loadDefaultSubTab();
+          })
+          .withFailureHandler((err) => {
+            setLoginLoading(false);
+            const message = err && err.message ? String(err.message) : "Failed to load configuration.";
+            showToast(message, "error");
+          })
+          .getBootstrapData(userPayload);
+      }
+
+      function transitionToWorkspace() {
+        loginView.classList.remove("active");
+        workspaceView.classList.add("active");
+      }
+
+      function renderUserBadge() {
+        if (!state.user) {
+          currentUserName.textContent = "Guest";
+          return;
+        }
+        const displayName = state.user.fullName || state.user.name || state.user.email || "User";
+        currentUserName.textContent = displayName;
+      }
+
+      function renderNavigation() {
+        tabNav.innerHTML = "";
+        const tabs = Array.isArray(state.bootstrap?.tabs) ? state.bootstrap.tabs : [];
+        if (!tabs.length) {
+          const info = document.createElement("div");
+          info.className = "empty-state";
+          info.innerHTML = "<p>No modules are currently available.</p>";
+          tabNav.appendChild(info);
+          return;
+        }
+
+        tabs.forEach((tab) => {
+          const group = document.createElement("div");
+          group.className = "tab-group";
+
+          const tabButton = document.createElement("button");
+          tabButton.type = "button";
+          tabButton.className = "tab-button";
+          tabButton.textContent = tab.tabLabelEn || tab.tabLabel || tab.tabId || "Module";
+          tabButton.addEventListener("click", () => activateTab(tab.tabId));
+          if (tab.tabId === state.activeTabId) {
+            tabButton.classList.add("active");
+          }
+          group.appendChild(tabButton);
+
+          const subTabs = Array.isArray(tab.subTabs) ? tab.subTabs : [];
+          if (subTabs.length) {
+            const list = document.createElement("ul");
+            list.className = "sub-tab-list";
+            subTabs.forEach((sub) => {
+              const li = document.createElement("li");
+              const subButton = document.createElement("button");
+              subButton.type = "button";
+              subButton.className = "sub-tab-button";
+              const subLabel = sub.labelEn || sub.viewLabel || sub.subId || "View";
+              subButton.textContent = subLabel;
+              subButton.addEventListener("click", () => activateSubTab(tab.tabId, sub.subId));
+              if (sub.subId === state.activeSubTabId) {
+                subButton.classList.add("active");
+              }
+              li.appendChild(subButton);
+              list.appendChild(li);
+            });
+            group.appendChild(list);
+          }
+
+          tabNav.appendChild(group);
+        });
+      }
+
+      function activateTab(tabId) {
+        state.activeTabId = tabId;
+        state.activeSubTabId = null;
+        renderNavigation();
+        updateWorkspaceTitle();
+        showEmptyState("Select a sub-tab to load data.");
+      }
+
+      function activateSubTab(tabId, subTabId) {
+        state.activeTabId = tabId;
+        state.activeSubTabId = subTabId;
+        renderNavigation();
+        updateWorkspaceTitle();
+        loadSubTabContent(subTabId);
+      }
+
+      function updateWorkspaceTitle() {
+        const tabs = Array.isArray(state.bootstrap?.tabs) ? state.bootstrap.tabs : [];
+        const activeTab = tabs.find((tab) => tab.tabId === state.activeTabId);
+        const subTab = activeTab?.subTabs?.find((sub) => sub.subId === state.activeSubTabId);
+        if (subTab) {
+          workspaceTitle.textContent = subTab.labelEn || subTab.viewLabel || subTab.subId;
+        } else if (activeTab) {
+          workspaceTitle.textContent = activeTab.tabLabelEn || activeTab.tabLabel || "Module";
+        } else {
+          workspaceTitle.textContent = "Command Workspace";
+        }
+      }
+
+      function ensureCommandPalette() {
+        if (!window.commandPalette || typeof window.commandPalette.init !== "function") {
+          return;
+        }
+        window.commandPalette.init({
+          onSelect: handleCommandSelection,
+          getCommands: buildCommandList,
+        });
+      }
+
+      function buildCommandList() {
+        const commands = [];
+        const tabs = Array.isArray(state.bootstrap?.tabs) ? state.bootstrap.tabs : [];
+        tabs.forEach((tab) => {
+          const tabLabel = tab.tabLabelEn || tab.tabLabel || tab.tabId;
+          commands.push({
+            id: tab.tabId,
+            label: tabLabel,
+            type: "tab",
+            hint: "Open module",
+            data: tab,
+          });
+          (Array.isArray(tab.subTabs) ? tab.subTabs : []).forEach((sub) => {
+            commands.push({
+              id: sub.subId,
+              label: `${tabLabel} • ${sub.labelEn || sub.viewLabel || sub.subId}`,
+              type: "subTab",
+              hint: "Load data view",
+              data: { tabId: tab.tabId, subTab: sub },
+            });
+          });
+        });
+
+        const forms = state.bootstrap?.forms || {};
+        Object.keys(forms).forEach((key) => {
+          const form = forms[key];
+          const title = form.titleEn || form.formId || key;
+          commands.push({
+            id: form.formId || key,
+            label: title,
+            type: "form",
+            hint: "Open dynamic form",
+            data: form,
+          });
+        });
+
+        return commands;
+      }
+
+      function handleCommandSelection(command) {
+        if (!command) {
+          return;
+        }
+        switch (command.type) {
+          case "tab":
+            activateTab(command.id);
+            break;
+          case "subTab":
+            activateSubTab(command.data.tabId, command.data.subTab.subId);
+            break;
+          case "form":
+            window.openFormModal?.(command.id, null, state.activeSubTabId || "");
+            break;
+          default:
+            showToast("Command type not supported.", "warning");
+        }
+      }
+
+      function loadDefaultSubTab() {
+        const tabs = Array.isArray(state.bootstrap?.tabs) ? state.bootstrap.tabs : [];
+        if (!tabs.length) {
+          return;
+        }
+        const firstTab = tabs[0];
+        const firstSub = Array.isArray(firstTab.subTabs) ? firstTab.subTabs[0] : null;
+        if (firstSub) {
+          activateSubTab(firstTab.tabId, firstSub.subId);
+        } else {
+          activateTab(firstTab.tabId);
+        }
+      }
+
+      function loadSubTabContent(subTabId) {
+        if (!scriptRunner) {
+          showToast("Cannot contact server.", "error");
+          return;
+        }
+        contentPanel.classList.add("loading");
+        emptyState.classList.add("hidden");
+
+        scriptRunner
+          .withSuccessHandler((response) => {
+            contentPanel.classList.remove("loading");
+            if (!response || response.success === false) {
+              const message = response?.message || "Failed to load data.";
+              showEmptyState(message);
+              return;
+            }
+            renderSubTabView(response);
+          })
+          .withFailureHandler((err) => {
+            contentPanel.classList.remove("loading");
+            const message = err && err.message ? String(err.message) : "Server error while loading data.";
+            showEmptyState(message);
+          })
+          .getSubTabViewData(subTabId);
+      }
+
+      function renderSubTabView(payload) {
+        const subTabConfig = payload?.subTabConfig || {};
+        const viewData = payload?.viewData || {};
+        updateWorkspaceTitle();
+
+        const container = document.createElement("div");
+        container.className = "data-pad-shell";
+
+        if (window.viewTab && typeof window.viewTab.buildDynamicViewPad === "function") {
+          const view = window.viewTab.buildDynamicViewPad(
+            Object.assign({}, subTabConfig, {
+              formConfig: payload?.formConfig || null,
+            }),
+            viewData
+          );
+          container.appendChild(view);
+        } else {
+          const fallback = document.createElement("pre");
+          fallback.textContent = JSON.stringify(viewData, null, 2);
+          container.appendChild(fallback);
+        }
+
+        contentPanel.innerHTML = "";
+        contentPanel.appendChild(container);
+      }
+
+      function refreshActiveSubTab() {
+        if (state.activeSubTabId) {
+          loadSubTabContent(state.activeSubTabId);
+        }
+      }
+
+      function showEmptyState(message) {
+        contentPanel.innerHTML = "";
+        const wrapper = document.createElement("div");
+        wrapper.className = "empty-state";
+        wrapper.innerHTML = `<h2>Nothing to display</h2><p>${message}</p>`;
+        contentPanel.appendChild(wrapper);
+      }
+
+      function handleSignOut() {
+        window.location.reload();
+      }
+
+      function handleGlobalKeydown(event) {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+          event.preventDefault();
+          window.commandPalette?.open();
+        }
+      }
+
+      function showToast(message, type) {
+        const toast = document.createElement("div");
+        toast.className = "toast";
+        if (type) {
+          toast.classList.add(`toast-${type}`);
+        }
+        toast.textContent = message;
+        toastContainer.appendChild(toast);
+
+        setTimeout(() => {
+          toast.style.opacity = "0";
+          toast.style.transform = "translateY(12px)";
+          setTimeout(() => {
+            toast.remove();
+          }, 220);
+        }, 4200);
+      }
+
+      init();
+    })(window);
+  </script>
+</body>
+</html>
