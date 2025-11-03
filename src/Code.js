@@ -1,4 +1,8 @@
-const SPREADSHEET_ID = "YOUR_SPREADSHEET_ID_HERE";
+const APP_NAME = "Nijjara ERP";
+const SPREADSHEET_ID = "1FTubSc1-RhoAGiRA6rMKw3wQ30NnSYi0fNHUcqzeTEw";
+const SS = SpreadsheetApp.openById(SPREADSHEET_ID);
+const SESSION_EXPIRY_MINUTES = 720;
+const SESSION_CACHE_TTL_SECONDS = 300;
 
 const SHEET_ALIASES = Object.freeze({
   USERS: ["SYS_Users", "Users"],
@@ -13,7 +17,7 @@ const SHEET_ALIASES = Object.freeze({
 });
 
 const DEBUG_ENABLED = false;
-let __spreadsheetCache;
+let __spreadsheetCache = SS;
 
 function debugLog_(context, stage, payload) {
   if (!DEBUG_ENABLED) return;
@@ -23,6 +27,24 @@ function debugLog_(context, stage, payload) {
     );
   } catch (err) {
     Logger.log(`[${context}] ${stage}`);
+  }
+}
+
+function debugError_(context, error, payload) {
+  if (!DEBUG_ENABLED) return;
+  try {
+    const message =
+      error && error.stack
+        ? `${error.message || error} :: ${error.stack}`
+        : String(error || "");
+    Logger.log(`[${context}] ERROR: ${message}`);
+    if (payload) {
+      Logger.log(
+        `[${context}] ERROR_PAYLOAD: ${JSON.stringify(payload, null, 2)}`
+      );
+    }
+  } catch (err) {
+    Logger.log(`[${context}] ERROR_LOGGING_FAILED: ${err}`);
   }
 }
 
@@ -244,6 +266,14 @@ function sheetRowsToObjects_(headers, rows) {
   });
 }
 
+function getSheetDataAsObjects(sheetKey) {
+  const data = loadSheetData_(sheetKey);
+  if (!Array.isArray(data.rows) || !data.rows.length) {
+    return [];
+  }
+  return sheetRowsToObjects_(data.headers, data.rows);
+}
+
 function keysEqual_(a, b) {
   if (a === b) return true;
   if (a == null || b == null) return false;
@@ -300,6 +330,26 @@ function valueFromKeys_(source, keys) {
     }
   }
   return undefined;
+}
+
+function appendObjectAsRow_(sheet, payload) {
+  if (!sheet) {
+    throw new Error("appendObjectAsRow_: sheet is required");
+  }
+  const lastColumn = sheet.getLastColumn();
+  if (!lastColumn || lastColumn < 1) {
+    throw new Error("appendObjectAsRow_: target sheet has no headers");
+  }
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
+  if (!headers.length) {
+    throw new Error("appendObjectAsRow_: unable to resolve headers");
+  }
+  const rowValues = headers.map((header) => {
+    const value = valueFromKeys_(payload, [header]);
+    return value !== undefined ? value : "";
+  });
+  sheet.appendRow(rowValues);
+  return { headers, rowValues };
 }
 
 function parseQuickActions_(rawValue) {
@@ -370,6 +420,39 @@ function mergeQuickActions_(existing, incoming) {
   return Array.from(merged.values());
 }
 
+function computePasswordHash_(password) {
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    password,
+    Utilities.Charset.UTF_8
+  );
+  const hex = digest
+    .map((byte) => ("0" + (byte & 0xff).toString(16)).slice(-2))
+    .join("");
+  const base64 = Utilities.base64Encode(digest);
+  return { hex, base64 };
+}
+
+function hashPassword(password) {
+  if (!password && password !== 0) return "";
+  const hashed = computePasswordHash_(String(password));
+  return hashed.base64;
+}
+
+function verifyPassword_(storedHash, password) {
+  if (!password && password !== 0) return false;
+  const candidate = String(storedHash || "").trim();
+  if (!candidate) return false;
+
+  const hashed = computePasswordHash_(String(password));
+
+  if (candidate === hashed.base64) return true;
+  if (candidate.toLowerCase() === hashed.hex.toLowerCase()) return true;
+  if (candidate === String(password)) return true;
+
+  return false;
+}
+
 function coerceFieldValue_(field, rawValue) {
   if (rawValue === undefined) return undefined;
   if (rawValue === null) return "";
@@ -388,6 +471,18 @@ function coerceFieldValue_(field, rawValue) {
     return isTruthyFlag_(rawValue);
   }
   return rawValue;
+}
+
+function sanitizeUserForClient_(user) {
+  if (!user || typeof user !== "object") return null;
+  const clone = Object.assign({}, user);
+  delete clone.Password;
+  delete clone.password;
+  delete clone.Password_Hash;
+  delete clone.PasswordHash;
+  delete clone.passwordHash;
+  delete clone.__rowIndex;
+  return clone;
 }
 
 function setup() {
@@ -476,109 +571,465 @@ function createSheets() {
 }
 
 function doGet(e) {
-  if (e.parameter.page === 'dashboard') {
-    return HtmlService.createHtmlOutputFromFile('Dashboard.html')
-      .setSandboxMode(HtmlService.SandboxMode.IFRAME)
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  } else if (e.parameter.page === 'signup') {
-    return HtmlService.createHtmlOutputFromFile('SignUp.html')
-      .setSandboxMode(HtmlService.SandboxMode.IFRAME)
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-  
-  return HtmlService.createHtmlOutputFromFile('App.html')
-    .setSandboxMode(HtmlService.SandboxMode.IFRAME)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+  const template = HtmlService.createTemplateFromFile("App");
+  template.request = e || {};
+  return template
+    .evaluate()
+    .setTitle(APP_NAME)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag("viewport", "width=device-width, initial-scale=1");
 }
 
 function include(filename) {
+  if (!filename) return "";
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
-// Function to authenticate user
-function authenticateUser(email, password) {
+function getActorEmail_() {
+  try {
+    const active = Session.getActiveUser();
+    const email =
+      active && typeof active.getEmail === "function" ? active.getEmail() : "";
+    return email || "SYSTEM";
+  } catch (err) {
+    debugError_("getActorEmail_", err);
+    return "SYSTEM";
+  }
+}
+
+function normalizeIdentity_(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function cacheSessionForUser_(userRecord, sessionId) {
+  if (!userRecord || !sessionId) return;
+  try {
+    const cache = CacheService.getScriptCache();
+    const userId = normalizeIdentity_(
+      valueFromKeys_(userRecord, ["User_Id", "UserID", "Id", "ID"])
+    );
+    const username = normalizeIdentity_(
+      valueFromKeys_(userRecord, ["Username", "Email", "User", "Login"])
+    );
+
+    if (userId) {
+      cache.put(`session:id:${userId}`, sessionId, SESSION_CACHE_TTL_SECONDS);
+    }
+    if (username) {
+      cache.put(
+        `session:username:${username}`,
+        sessionId,
+        SESSION_CACHE_TTL_SECONDS
+      );
+    }
+  } catch (err) {
+    debugError_("cacheSessionForUser_", err, { sessionId });
+  }
+}
+
+function getCachedSessionForUser_(identifiers) {
+  try {
+    const cache = CacheService.getScriptCache();
+    const list = Array.isArray(identifiers) ? identifiers : [identifiers];
+    for (let i = 0; i < list.length; i++) {
+      const normalized = normalizeIdentity_(list[i]);
+      if (!normalized) continue;
+      const cachedById = cache.get(`session:id:${normalized}`);
+      if (cachedById) return cachedById;
+      const cachedByUsername = cache.get(`session:username:${normalized}`);
+      if (cachedByUsername) return cachedByUsername;
+    }
+  } catch (err) {
+    debugError_("getCachedSessionForUser_", err, { identifiers });
+  }
+  return null;
+}
+
+function updateLastLoginForUser_(userRecord) {
   const sheet = getSheetByAliases_(SHEET_ALIASES.USERS);
-  if (!sheet) {
-    return { authenticated: false, message: 'Users sheet not found.' };
-  }
-  const data = sheet.getDataRange().getValues();
-  if (!data || data.length < 2) {
-    return { authenticated: false, message: 'Users sheet has no data.' };
-  }
+  if (!sheet) return false;
+  const rowIndex = Number(userRecord?.__rowIndex);
+  if (!rowIndex || rowIndex < 2) return false;
 
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const rowEmail = row[0];
-    const rowPassword = row[1];
-    if (rowEmail === email && rowPassword === password) {
-      return {
-        authenticated: true,
-        role: row[2] || row[3] || 'user'
-      };
-    }
-  }
-  return { authenticated: false }; // Authentication failed
+  const lastColumn = sheet.getLastColumn();
+  if (!lastColumn) return false;
+  const headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0] || [];
+  const colIndex = findHeaderIndex_(headers, "Last_Login", "LastLogin", "Last Login");
+  if (colIndex < 0) return false;
+
+  sheet.getRange(rowIndex, colIndex + 1).setValue(new Date());
+  return true;
 }
 
-// Function to create a session
-function createSession(email) {
-  const token = Utilities.getUuid();
-  const sessionSheet = getSheetByAliases_(SHEET_ALIASES.SESSIONS);
-  if (!sessionSheet) {
-    throw new Error('Sessions sheet not found.');
-  }
-  sessionSheet.appendRow([email, token, new Date()]);
-  return token;
+function createSessionForUser_(userRecord, eventType) {
+  const sheet = getSheetByAliases_(SHEET_ALIASES.SESSIONS);
+  if (!sheet) return null;
+
+  const now = new Date();
+  const sessionId = Utilities.getUuid();
+  const userId =
+    valueFromKeys_(userRecord, ["User_Id", "UserID", "Id", "ID"]) || "";
+  const username =
+    valueFromKeys_(userRecord, ["Username", "Email", "User", "Login"]) || "";
+  const email = valueFromKeys_(userRecord, ["Email", "Username"]) || "";
+  const role = valueFromKeys_(userRecord, ["Role_Id", "RoleID", "Role"]) || "";
+  const type = eventType || "LOGIN";
+
+  const payload = {
+    Session_Id: sessionId,
+    SessionID: sessionId,
+    Session: sessionId,
+    User_Id: userId,
+    UserID: userId,
+    User: username,
+    Username: username,
+    Email: email,
+    Role_Id: role,
+    Role: role,
+    Status: "ACTIVE",
+    Session_Status: "ACTIVE",
+    State: "ACTIVE",
+    Type: type,
+    Session_Type: type,
+    Category: type,
+    Started_At: now,
+    Start_At: now,
+    Created_At: now,
+    CreatedAt: now,
+    Created_By: getActorEmail_(),
+    Notes: `${type} session for ${username || email || userId}`,
+  };
+
+  appendObjectAsRow_(sheet, payload);
+  return { sessionId, createdAt: now, type };
 }
 
-// Function to check session validity
-function checkSession(token) {
-  const sessionSheet = getSheetByAliases_(SHEET_ALIASES.SESSIONS);
-  if (!sessionSheet) {
-    return { valid: false };
-  }
-  const sessionData = sessionSheet.getDataRange().getValues();
+function logUserLogin(userRecord, result, meta = {}) {
+  try {
+    const sheet = getSheetFlexible_("SYS_Audit_Log");
+    if (!sheet) return false;
+    const now = new Date();
+    const success = !!(result && result.success);
+    const username =
+      valueFromKeys_(userRecord, ["Username", "Email", "User", "Login"]) ||
+      meta.username ||
+      "";
+    const userId =
+      valueFromKeys_(userRecord, ["User_Id", "UserID", "Id", "ID"]) ||
+      meta.userId ||
+      "";
 
-  for (let i = 1; i < sessionData.length; i++) {
-    if (sessionData[i][1] === token) {
-      // Optional: Check for session expiry
-      const sessionTime = new Date(sessionData[i][2]);
-      const currentTime = new Date();
-      const diff = (currentTime - sessionTime) / (1000 * 60); // Difference in minutes
-      if (diff > 60) { // Session expires after 60 minutes
-        return { valid: false };
-      }
-      
-      const userSheet = getSheetByAliases_(SHEET_ALIASES.USERS);
-      if (!userSheet) {
-        return { valid: false };
-      }
-      const userData = userSheet.getDataRange().getValues();
-      for (let j = 1; j < userData.length; j++) {
-        if (userData[j][0] === sessionData[i][0]) {
-          return {
-            valid: true,
-            email: userData[j][0],
-            role: userData[j][2],
-            user: rowToObject_(userData[j], userData[0] ? userData[0] : [])
-          }; // Session valid
+    const payload = {
+      Timestamp: now,
+      Action: "LOGIN",
+      Event_Type: "LOGIN",
+      Status: success ? "SUCCESS" : "FAILURE",
+      Result: success ? "SUCCESS" : "FAILURE",
+      Message: meta.message || result?.message || "",
+      User_Id: userId,
+      UserID: userId,
+      Username: username,
+      Email:
+        valueFromKeys_(userRecord, ["Email"]) ||
+        meta.email ||
+        username,
+      Session_Id:
+        result?.session?.sessionId ||
+        result?.sessionId ||
+        meta.sessionId ||
+        "",
+      SessionID:
+        result?.session?.sessionId ||
+        result?.sessionId ||
+        meta.sessionId ||
+        "",
+      Details: JSON.stringify({
+        reason: meta.reason || result?.meta?.reason || "",
+        authenticated: success,
+      }),
+      Actor: getActorEmail_(),
+    };
+
+    appendObjectAsRow_(sheet, payload);
+    return true;
+  } catch (err) {
+    debugError_("logUserLogin", err, { meta });
+    return false;
+  }
+}
+
+function authenticateUser(credentialsOrEmail, password) {
+  const FNAME = "authenticateUser";
+  const credentials =
+    typeof credentialsOrEmail === "object" && credentialsOrEmail !== null
+      ? {
+          username: normalizeIdentity_(
+            credentialsOrEmail.username ||
+              credentialsOrEmail.email ||
+              credentialsOrEmail.user
+          ),
+          rawUsername:
+            credentialsOrEmail.username ||
+            credentialsOrEmail.email ||
+            credentialsOrEmail.user ||
+            "",
+          password:
+            credentialsOrEmail.password !== undefined
+              ? credentialsOrEmail.password
+              : password,
         }
-      }
+      : {
+          username: normalizeIdentity_(credentialsOrEmail),
+          rawUsername: credentialsOrEmail,
+          password,
+        };
+
+  const fail = (message, meta = {}, userForLog) => {
+    const response = {
+      success: false,
+      authenticated: false,
+      message: message || "Invalid username or password.",
+      meta,
+    };
+    logUserLogin(userForLog || null, response, {
+      username: credentials.rawUsername,
+      reason: meta.reason,
+      message: response.message,
+    });
+    return response;
+  };
+
+  if (!credentials.username || !credentials.password) {
+    return fail("Please provide both username and password.", {
+      reason: "MISSING_CREDENTIALS",
+    });
+  }
+
+  try {
+    const users = getSheetDataAsObjects(SHEET_ALIASES.USERS);
+    if (!users.length) {
+      return fail("No users configured in the system.", { reason: "NO_USERS" });
+    }
+
+    const match = users.find((record) => {
+      const username = normalizeIdentity_(
+        valueFromKeys_(record, ["Username", "Email", "User", "Login"])
+      );
+      const userId = normalizeIdentity_(
+        valueFromKeys_(record, ["User_Id", "UserID", "Id", "ID"])
+      );
+      return (
+        credentials.username === username || credentials.username === userId
+      );
+    });
+
+    if (!match) {
+      return fail("Invalid username or password.", { reason: "NOT_FOUND" });
+    }
+
+    const activeFlag = valueFromKeys_(match, [
+      "IsActive",
+      "Active",
+      "Status",
+      "Enabled",
+    ]);
+    if (activeFlag !== undefined && !isTruthyFlag_(activeFlag)) {
+      return fail("This account has been disabled.", { reason: "INACTIVE" }, match);
+    }
+
+    const storedHash = valueFromKeys_(match, [
+      "Password_Hash",
+      "PasswordHash",
+      "Password",
+    ]);
+    if (!verifyPassword_(storedHash, credentials.password)) {
+      return fail("Invalid username or password.", { reason: "BAD_PASSWORD" }, match);
+    }
+
+    updateLastLoginForUser_(match);
+
+    const session = createSessionForUser_(match, "LOGIN");
+    if (session) {
+      cacheSessionForUser_(match, session.sessionId);
+    }
+
+    const sanitizedUser = sanitizeUserForClient_(match) || {};
+    const bootstrap = getBootstrapData(sanitizedUser) || {};
+    if (bootstrap && typeof bootstrap === "object") {
+      bootstrap.user = sanitizedUser;
+    }
+
+    const response = {
+      success: true,
+      authenticated: true,
+      message: "Login successful.",
+      user: sanitizedUser,
+      role:
+        valueFromKeys_(match, ["Role_Id", "RoleID", "Role"]) ||
+        bootstrap.role ||
+        null,
+      permissions: bootstrap?.permissions || null,
+      bootstrap,
+      session,
+      meta: {
+        loginAt: new Date().toISOString(),
+        sessionId: session?.sessionId || null,
+      },
+    };
+
+    logUserLogin(match, response, {
+      sessionId: session?.sessionId,
+      message: "User login successful.",
+    });
+
+    return response;
+  } catch (err) {
+    debugError_(FNAME, err, { stage: "exception" });
+    return fail("An unexpected error occurred during login.", {
+      reason: "EXCEPTION",
+      detail: err.message,
+    });
+  }
+}
+
+function createSession(identifier, eventTypeOrOptions) {
+  const eventType =
+    typeof eventTypeOrOptions === "object" && eventTypeOrOptions !== null
+      ? eventTypeOrOptions.eventType
+      : eventTypeOrOptions;
+  const normalized = normalizeIdentity_(identifier);
+  if (!normalized) {
+    throw new Error("createSession: identifier is required.");
+  }
+
+  const users = getSheetDataAsObjects(SHEET_ALIASES.USERS);
+  const match = users.find((record) => {
+    const username = normalizeIdentity_(
+      valueFromKeys_(record, ["Username", "Email", "User", "Login"])
+    );
+    const userId = normalizeIdentity_(
+      valueFromKeys_(record, ["User_Id", "UserID", "Id", "ID"])
+    );
+    return normalized === username || normalized === userId;
+  });
+
+  if (!match) {
+    throw new Error("createSession: user not found.");
+  }
+
+  const cached = getCachedSessionForUser_([
+    valueFromKeys_(match, ["User_Id", "UserID", "Id", "ID"]),
+    valueFromKeys_(match, ["Username", "Email", "User", "Login"]),
+    normalized,
+  ]);
+  if (cached) {
+    return cached;
+  }
+
+  const session = createSessionForUser_(match, eventType || "LOGIN");
+  if (session) {
+    cacheSessionForUser_(match, session.sessionId);
+    logUserLogin(match, { success: true, session }, { message: "Session created." });
+    return session.sessionId;
+  }
+
+  throw new Error("createSession: failed to create session.");
+}
+
+function checkSession(token) {
+  if (!token) {
+    return { valid: false, reason: "MISSING_TOKEN" };
+  }
+
+  const sessions = getSheetDataAsObjects(SHEET_ALIASES.SESSIONS);
+  if (!sessions.length) {
+    return { valid: false, reason: "NO_SESSIONS" };
+  }
+
+  const match = sessions.find((record) => {
+    const sessionId = valueFromKeys_(record, [
+      "Session_Id",
+      "SessionID",
+      "Session",
+      "Token",
+    ]);
+    return String(sessionId || "").trim() === String(token || "").trim();
+  });
+
+  if (!match) {
+    return { valid: false, reason: "NOT_FOUND" };
+  }
+
+  const status = valueFromKeys_(match, ["Status", "Session_Status", "State"]);
+  if (status && String(status).toUpperCase() === "INACTIVE") {
+    return { valid: false, reason: "INACTIVE" };
+  }
+
+  const startedAtValue = valueFromKeys_(match, [
+    "Started_At",
+    "Start_At",
+    "Created_At",
+    "CreatedAt",
+    "Timestamp",
+  ]);
+  let startedAt =
+    startedAtValue instanceof Date ? startedAtValue : null;
+  if (!startedAt && startedAtValue) {
+    const parsed = new Date(startedAtValue);
+    if (!Number.isNaN(parsed.getTime())) {
+      startedAt = parsed;
     }
   }
-  return { valid: false }; // Session not found
+
+  if (startedAt) {
+    const diffMinutes = (new Date() - startedAt) / (1000 * 60);
+    if (diffMinutes > SESSION_EXPIRY_MINUTES) {
+      return { valid: false, reason: "EXPIRED" };
+    }
+  }
+
+  const sessionInfo = Object.assign({}, match);
+  delete sessionInfo.__rowIndex;
+
+  return {
+    valid: true,
+    session: sessionInfo,
+    userId: valueFromKeys_(match, ["User_Id", "UserID", "Id", "ID"]) || null,
+  };
 }
 
 function getLoggedInUser(token) {
   const session = checkSession(token);
-  if (session.valid) {
-    return {
-      email: session.email,
-      role: session.role
-    };
-  } else {
+  if (!session.valid) {
     return null;
   }
+
+  const users = getSheetDataAsObjects(SHEET_ALIASES.USERS);
+  const sessionUserId = normalizeIdentity_(session.userId);
+  const match = users.find((record) => {
+    const userId = normalizeIdentity_(
+      valueFromKeys_(record, ["User_Id", "UserID", "Id", "ID"])
+    );
+    const username = normalizeIdentity_(
+      valueFromKeys_(record, ["Username", "Email", "User", "Login"])
+    );
+    return (
+      sessionUserId === userId ||
+      sessionUserId === username
+    );
+  });
+
+  if (!match) {
+    return null;
+  }
+
+  const sanitizedUser = sanitizeUserForClient_(match);
+  return {
+    email:
+      valueFromKeys_(match, ["Email", "Username"]) || sanitizedUser?.Email || null,
+    role: valueFromKeys_(match, ["Role_Id", "RoleID", "Role"]) || null,
+    user: sanitizedUser,
+  };
 }
 
 function deleteRecord(sheetName, id) {

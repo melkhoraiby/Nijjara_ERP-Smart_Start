@@ -665,27 +665,53 @@
         setLoginLoading(true);
 
         scriptRunner
-          .withSuccessHandler((authResult) => {
-            if (!authResult || !authResult.authenticated) {
-              setLoginLoading(false);
-              setLoginError("Invalid credentials. Please try again.");
-              return;
-            }
-
-            scriptRunner
-              .withSuccessHandler((token) => {
-                state.sessionToken = token;
-                const userPayload = {
-                  email,
-                  role: authResult.role || "user",
-                };
-                bootstrapWorkspace(userPayload);
-              })
-              .withFailureHandler(handleLoginFailure)
-              .createSession(email);
-          })
+          .withSuccessHandler((authResult) => handleAuthSuccess(authResult, email))
           .withFailureHandler(handleLoginFailure)
-          .authenticateUser(email, password);
+          .authenticateUser({ email, password });
+      }
+
+      function handleAuthSuccess(authResult, fallbackEmail) {
+        if (!authResult || !authResult.authenticated || authResult.success === false) {
+          setLoginLoading(false);
+          const message =
+            authResult && authResult.message
+              ? String(authResult.message)
+              : "Invalid credentials. Please try again.";
+          setLoginError(message);
+          return;
+        }
+
+        const sessionId =
+          (authResult.session && authResult.session.sessionId) ||
+          (authResult.meta && authResult.meta.sessionId) ||
+          (authResult.bootstrap &&
+            ((authResult.bootstrap.session && authResult.bootstrap.session.sessionId) ||
+              (authResult.bootstrap.meta && authResult.bootstrap.meta.sessionId))) ||
+          null;
+
+        state.sessionToken = sessionId;
+
+        const resolvedUser =
+          authResult.user ||
+          state.user || {
+            Email: fallbackEmail || "",
+            email: fallbackEmail || "",
+            Username: fallbackEmail || "",
+            Role_Id: authResult.role || "user",
+            role: authResult.role || "user",
+          };
+
+        if (!resolvedUser.Email && fallbackEmail) resolvedUser.Email = fallbackEmail;
+        if (!resolvedUser.email && fallbackEmail) resolvedUser.email = fallbackEmail;
+        if (!resolvedUser.Username && fallbackEmail) resolvedUser.Username = fallbackEmail;
+
+        state.user = resolvedUser;
+
+        if (authResult.bootstrap && typeof authResult.bootstrap === "object") {
+          bootstrapWorkspace(authResult.bootstrap, resolvedUser);
+        } else {
+          fetchBootstrapForUser(resolvedUser);
+        }
       }
 
       function handleLoginFailure(err) {
@@ -709,30 +735,53 @@
         loginError.classList.add("visible");
       }
 
-      function bootstrapWorkspace(userPayload) {
+      function fetchBootstrapForUser(userPayload) {
+        if (!scriptRunner) {
+          setLoginLoading(false);
+          showToast("Cannot load configuration in this context.", "error");
+          setLoginError("Cannot load configuration in this context.");
+          return;
+        }
+
         scriptRunner
           .withSuccessHandler((payload) => {
-            setLoginLoading(false);
-            state.bootstrap = payload || {};
-            state.user = payload?.user || userPayload || null;
-            window.ERP_STATE = {
-              sessionToken: state.sessionToken,
-              user: state.user,
-              bootstrap: state.bootstrap,
-            };
-            window.bootstrapData = payload || {};
-            transitionToWorkspace();
-            renderUserBadge();
-            renderNavigation();
-            ensureCommandPalette();
-            loadDefaultSubTab();
+            bootstrapWorkspace(payload || {}, userPayload);
           })
           .withFailureHandler((err) => {
             setLoginLoading(false);
-            const message = err && err.message ? String(err.message) : "Failed to load configuration.";
+            const message =
+              err && err.message ? String(err.message) : "Failed to load configuration.";
             showToast(message, "error");
+            setLoginError(message);
           })
-          .getBootstrapData(userPayload);
+          .getBootstrapData(userPayload || {});
+      }
+
+      function bootstrapWorkspace(bootstrapPayload, fallbackUser) {
+        setLoginLoading(false);
+        state.bootstrap = bootstrapPayload || {};
+        const effectiveUser =
+          state.bootstrap.user || fallbackUser || state.user || null;
+
+        if (effectiveUser) {
+          state.user = effectiveUser;
+          if (!state.bootstrap.user) {
+            state.bootstrap.user = effectiveUser;
+          }
+        }
+
+        window.ERP_STATE = {
+          sessionToken: state.sessionToken,
+          user: state.user,
+          bootstrap: state.bootstrap,
+        };
+        window.bootstrapData = state.bootstrap;
+        setLoginError("");
+        transitionToWorkspace();
+        renderUserBadge();
+        renderNavigation();
+        ensureCommandPalette();
+        loadDefaultSubTab();
       }
 
       function transitionToWorkspace() {
