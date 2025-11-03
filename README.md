@@ -54,7 +54,7 @@ This architecture ensures that to add a new module, page, or form, **no new Java
 
 ## 🚀 Setup
 
-1.  **Spreadsheet ID:** Open your Google Sheet and copy the ID from the URL. The URL will look like this: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`. Replace `"YOUR_SPREADSHEET_ID_HERE"` in `Code.js` with your actual spreadsheet ID.
+1.  **Spreadsheet ID:** Open your Google Sheet and copy the ID from the URL. The URL will look like this: `https://docs.google.com/spreadsheets/d/1FTubSc1-RhoAGiRA6rMKw3wQ30NnSYi0fNHUcqzeTEw/edit`. Replace `"YOUR_SPREADSHEET_ID_HERE"` in `Code.js` with your actual spreadsheet ID.
 2.  **Run Setup Function:** In the Google Apps Script editor, select the `setup` function from the dropdown menu and click the "Run" button. This will create the `Users` and `Sessions` sheets in your spreadsheet.
 
 📋 Nijjara ERP (v2): Action Plan & To-Do List
