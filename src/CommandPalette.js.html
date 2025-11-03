@@ -53,6 +53,7 @@
           overflow: hidden;
           transform: translateY(8px);
           transition: transform 0.18s ease;
+          direction: rtl;
         }
         .command-palette-overlay.open .command-palette {
           transform: translateY(0);
@@ -65,6 +66,7 @@
           color: #f5f7ff;
           font-size: 1rem;
           outline: none;
+          text-align: right;
         }
         .command-palette__list {
           max-height: 360px;
@@ -79,6 +81,8 @@
           color: #d5dcf5;
           cursor: pointer;
           transition: background 0.15s ease;
+          flex-direction: row-reverse;
+          text-align: right;
         }
         .command-palette__item:hover,
         .command-palette__item.is-active {
@@ -91,8 +95,8 @@
         .command-palette__meta {
           font-size: 0.78rem;
           color: rgba(245, 247, 255, 0.6);
-          text-transform: uppercase;
-          letter-spacing: 0.08em;
+          text-transform: none;
+          letter-spacing: 0;
         }
         .command-palette__empty {
           padding: 28px 24px;
@@ -115,10 +119,10 @@
       palette.overlay = document.createElement("div");
       palette.overlay.className = "command-palette-overlay";
       palette.overlay.innerHTML = `
-        <div class="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
-          <input type="search" class="command-palette__input" placeholder="Type a command or search…" />
+        <div class="command-palette" role="dialog" aria-modal="true" aria-label="لوحة الأوامر">
+          <input type="search" class="command-palette__input" placeholder="اكتب أمراً أو ابحث…" />
           <div class="command-palette__list" role="listbox"></div>
-          <div class="command-palette__empty hidden">No results found.</div>
+          <div class="command-palette__empty hidden">لا توجد نتائج مطابقة.</div>
         </div>
       `;
       palette.root.appendChild(palette.overlay);
@@ -281,7 +285,7 @@
       }
       return commands.map((command) => ({
         id: command.id,
-        label: command.label || command.title || command.name || "Command",
+        label: command.label || command.title || command.name || "أمر",
         type: command.type || "command",
         hint: command.hint || "",
         data: command.data || command,

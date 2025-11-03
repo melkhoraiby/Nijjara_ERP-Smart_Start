@@ -19,6 +19,18 @@ const SHEET_ALIASES = Object.freeze({
 const DEBUG_ENABLED = false;
 let __spreadsheetCache = SS;
 
+const LOGIN_MESSAGES_AR = Object.freeze({
+  INVALID_CREDENTIALS:
+    "بيانات الاعتماد غير صحيحة. يرجى التحقق والمحاولة مجدداً.",
+  MISSING_CREDENTIALS:
+    "يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور.",
+  NO_USERS: "لم يتم إعداد أي مستخدمين في النظام بعد.",
+  ACCOUNT_DISABLED: "تم تعطيل هذا الحساب. يرجى التواصل مع مسؤول النظام.",
+  UNEXPECTED:
+    "حدث خطأ غير متوقع أثناء محاولة تسجيل الدخول. يرجى المحاولة لاحقاً.",
+  SUCCESS: "تم تسجيل الدخول بنجاح.",
+});
+
 function debugLog_(context, stage, payload) {
   if (!DEBUG_ENABLED) return;
   try {
@@ -700,10 +712,14 @@ function authenticateUser(credentialsOrEmail, password) {
         };
 
   const fail = (message, meta = {}, userForLog) => {
+    const resolvedMessage = message
+      ? String(message).trim()
+      : LOGIN_MESSAGES_AR.INVALID_CREDENTIALS;
     const response = {
       success: false,
       authenticated: false,
-      message: message || "Invalid username or password.",
+      message:
+        resolvedMessage || LOGIN_MESSAGES_AR.INVALID_CREDENTIALS,
       meta,
     };
     logUserLogin(userForLog || null, response, {
@@ -715,7 +731,7 @@ function authenticateUser(credentialsOrEmail, password) {
   };
 
   if (!credentials.username || !credentials.password) {
-    return fail("Please provide both username and password.", {
+    return fail(LOGIN_MESSAGES_AR.MISSING_CREDENTIALS, {
       reason: "MISSING_CREDENTIALS",
     });
   }
@@ -723,23 +739,54 @@ function authenticateUser(credentialsOrEmail, password) {
   try {
     const users = getSheetDataAsObjects(SHEET_ALIASES.USERS);
     if (!users.length) {
-      return fail("No users configured in the system.", { reason: "NO_USERS" });
+      return fail(LOGIN_MESSAGES_AR.NO_USERS, { reason: "NO_USERS" });
     }
 
     const match = users.find((record) => {
-      const username = normalizeIdentity_(
-        valueFromKeys_(record, ["Username", "Email", "User", "Login"])
-      );
-      const userId = normalizeIdentity_(
-        valueFromKeys_(record, ["User_Id", "UserID", "Id", "ID"])
-      );
-      return (
-        credentials.username === username || credentials.username === userId
+      const identifiers = new Set();
+
+      const usernameRaw = valueFromKeys_(record, [
+        "Username",
+        "User",
+        "Login",
+      ]);
+      const emailRaw = valueFromKeys_(record, ["Email", "Email_Address"]);
+      const userIdRaw = valueFromKeys_(record, [
+        "User_Id",
+        "UserID",
+        "Id",
+        "ID",
+      ]);
+
+      if (usernameRaw) {
+        identifiers.add(normalizeIdentity_(usernameRaw));
+      }
+
+      if (emailRaw) {
+        identifiers.add(normalizeIdentity_(emailRaw));
+        const emailParts = String(emailRaw).split("@");
+        if (emailParts.length > 1) {
+          identifiers.add(normalizeIdentity_(emailParts[0]));
+        }
+      }
+
+      if (userIdRaw) {
+        identifiers.add(normalizeIdentity_(userIdRaw));
+      }
+
+      identifiers.delete("");
+      identifiers.delete(null);
+      identifiers.delete(undefined);
+
+      return Array.from(identifiers).some(
+        (identifier) => identifier && identifier === credentials.username
       );
     });
 
     if (!match) {
-      return fail("Invalid username or password.", { reason: "NOT_FOUND" });
+      return fail(LOGIN_MESSAGES_AR.INVALID_CREDENTIALS, {
+        reason: "NOT_FOUND",
+      });
     }
 
     const activeFlag = valueFromKeys_(match, [
@@ -749,7 +796,13 @@ function authenticateUser(credentialsOrEmail, password) {
       "Enabled",
     ]);
     if (activeFlag !== undefined && !isTruthyFlag_(activeFlag)) {
-      return fail("This account has been disabled.", { reason: "INACTIVE" }, match);
+      return fail(
+        LOGIN_MESSAGES_AR.ACCOUNT_DISABLED,
+        {
+          reason: "INACTIVE",
+        },
+        match
+      );
     }
 
     const storedHash = valueFromKeys_(match, [
@@ -758,7 +811,13 @@ function authenticateUser(credentialsOrEmail, password) {
       "Password",
     ]);
     if (!verifyPassword_(storedHash, credentials.password)) {
-      return fail("Invalid username or password.", { reason: "BAD_PASSWORD" }, match);
+      return fail(
+        LOGIN_MESSAGES_AR.INVALID_CREDENTIALS,
+        {
+          reason: "BAD_PASSWORD",
+        },
+        match
+      );
     }
 
     updateLastLoginForUser_(match);
@@ -777,7 +836,7 @@ function authenticateUser(credentialsOrEmail, password) {
     const response = {
       success: true,
       authenticated: true,
-      message: "Login successful.",
+      message: LOGIN_MESSAGES_AR.SUCCESS,
       user: sanitizedUser,
       role:
         valueFromKeys_(match, ["Role_Id", "RoleID", "Role"]) ||
@@ -794,13 +853,13 @@ function authenticateUser(credentialsOrEmail, password) {
 
     logUserLogin(match, response, {
       sessionId: session?.sessionId,
-      message: "User login successful.",
+      message: "تم تسجيل دخول المستخدم بنجاح.",
     });
 
     return response;
   } catch (err) {
     debugError_(FNAME, err, { stage: "exception" });
-    return fail("An unexpected error occurred during login.", {
+    return fail(LOGIN_MESSAGES_AR.UNEXPECTED, {
       reason: "EXCEPTION",
       detail: err.message,
     });
@@ -844,7 +903,9 @@ function createSession(identifier, eventTypeOrOptions) {
   const session = createSessionForUser_(match, eventType || "LOGIN");
   if (session) {
     cacheSessionForUser_(match, session.sessionId);
-    logUserLogin(match, { success: true, session }, { message: "Session created." });
+    logUserLogin(match, { success: true, session }, {
+      message: "تم إنشاء الجلسة.",
+    });
     return session.sessionId;
   }
 
@@ -1099,7 +1160,7 @@ function getSubTabViewData(subTabId, user) {
     if (!match) {
       return {
         success: false,
-        message: `Sub-tab ${subTabId} not found in register.`
+        message: `التبويب الفرعي ${subTabId} غير موجود في سجل التبويبات.`,
       };
     }
 
@@ -1108,7 +1169,7 @@ function getSubTabViewData(subTabId, user) {
     if (!sourceSheetName) {
       return {
         success: false,
-        message: `Sub-tab ${subTabId} has no source sheet configured.`
+        message: `التبويب الفرعي ${subTabId} لا يحتوي على ورقة مصدر محددة.`,
       };
     }
 
@@ -1116,7 +1177,7 @@ function getSubTabViewData(subTabId, user) {
     if (!viewData.sheet) {
       return {
         success: false,
-        message: `Source sheet ${sourceSheetName} not found for sub-tab ${subTabId}.`
+        message: `تعذر العثور على ورقة المصدر ${sourceSheetName} للتبويب الفرعي ${subTabId}.`,
       };
     }
 
@@ -1197,7 +1258,7 @@ function getSubTabViewDataSimple_(tabId, user) {
 
 function getFormPayload(formId, user) {
   if (!formId) {
-    return { success: false, message: "Form ID is required." };
+    return { success: false, message: "معرّف النموذج مطلوب." };
   }
 
   const structure = getDynamicFormStructure_(formId);
@@ -1253,7 +1314,7 @@ function getFormPayload(formId, user) {
 
   return {
     success: false,
-    message: `Form configuration not found for ${formId}.`
+    message: `تعذر العثور على إعدادات النموذج ${formId}.`,
   };
 }
 
@@ -1871,7 +1932,7 @@ function getDynamicFormStructure_(formId) {
   const sectionMap = new Map();
   matchingRows.forEach((row, index) => {
     const sectionLabel =
-      idx.section >= 0 ? readString_(row, idx.section) : "Main";
+      idx.section >= 0 ? readString_(row, idx.section) : "القسم الرئيسي";
     let section = sectionMap.get(sectionLabel);
     if (!section) {
       section = {
@@ -1953,7 +2014,7 @@ function saveRecordAdvanced_(formId, data, user) {
   if (!targetSheetName) {
     return {
       success: false,
-      message: `Target sheet is not configured for form ${formId}.`
+      message: `لم يتم تحديد ورقة الوجهة للنموذج ${formId}.`,
     };
   }
 
@@ -1961,7 +2022,7 @@ function saveRecordAdvanced_(formId, data, user) {
   if (!sheetData.sheet) {
     return {
       success: false,
-      message: `Target sheet ${targetSheetName} not found.`
+      message: `تعذر العثور على ورقة الوجهة ${targetSheetName}.`,
     };
   }
 
@@ -1970,7 +2031,7 @@ function saveRecordAdvanced_(formId, data, user) {
   if (!headers.length) {
     return {
       success: false,
-      message: `Target sheet ${targetSheetName} has no header row.`
+      message: `ورقة الوجهة ${targetSheetName} لا تحتوي على صف رؤوس.`,
     };
   }
 
