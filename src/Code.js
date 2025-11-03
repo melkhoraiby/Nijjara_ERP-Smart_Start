@@ -1258,18 +1258,9 @@ function getFormPayload(formId, user) {
 }
 
 function saveRecord(formId, data, user) {
-  try {
-    const advanced = saveRecordAdvanced_(formId, data, user);
-    if (advanced) {
-      return advanced;
-    }
-  } catch (err) {
-    debugLog_("saveRecord", "advancedError", {
-      formId,
-      message: err && err.message
-    });
-  }
-  return saveRecordSimple_(formId, data, user);
+  // Direct call to the advanced, data-driven function.
+  // We have removed the try/catch and the fallback to saveRecordSimple_.
+  return saveRecordAdvanced_(formId, data, user);
 }
 
 function getDropdowns() {
@@ -2095,89 +2086,4 @@ function getPayloadValue_(payload, field) {
     field.targetColumn ? field.targetColumn.replace(/_/g, " ") : ""
   ].filter(Boolean);
   return valueFromKeys_(payload, candidates);
-}
-
-function saveRecordSimple_(formId, data) {
-  const sheetData = loadSheetData_(SHEET_ALIASES.DYNAMIC_FORMS);
-  if (!sheetData.rows.length) {
-    return { success: false, message: "Form configuration sheet not found." };
-  }
-
-  const idx = {
-    formId: findHeaderIndex_(
-      sheetData.headers,
-      "Form_ID",
-      "Form Id",
-      "FormID",
-      "Form ID"
-    ),
-    sheetName: findHeaderIndex_(
-      sheetData.headers,
-      "Sheet_Name",
-      "Target_Sheet",
-      "SheetName"
-    ),
-    mapping: findHeaderIndex_(
-      sheetData.headers,
-      "Field_Mapping",
-      "Mapping",
-      "FieldMapping",
-      "Fields"
-    )
-  };
-
-  if (idx.formId < 0 || idx.sheetName < 0) {
-    return { success: false, message: "Field mapping columns are missing." };
-  }
-
-  let sheetName = "";
-  let fieldMapping = null;
-  for (let i = 0; i < sheetData.rows.length; i++) {
-    const row = sheetData.rows[i];
-    if (keysEqual_(getValueAt_(row, idx.formId), formId)) {
-      sheetName = readString_(row, idx.sheetName);
-      fieldMapping = idx.mapping >= 0 ? parseJSONSafe_(getValueAt_(row, idx.mapping), null) : null;
-      break;
-    }
-  }
-
-  if (!sheetName) {
-    return { success: false, message: "Form configuration not found." };
-  }
-
-  if (data && data.id) {
-    return updateRecord(sheetName, data.id, data);
-  }
-
-  if (!fieldMapping || typeof fieldMapping !== "object") {
-    return {
-      success: false,
-      message: "Field mapping is not defined for this form."
-    };
-  }
-
-  const targetSheet = getSheetFlexible_(sheetName);
-  if (!targetSheet) {
-    return {
-      success: false,
-      message: `Target sheet ${sheetName} not found.`
-    };
-  }
-
-  const headers = targetSheet
-    .getRange(1, 1, 1, targetSheet.getLastColumn())
-    .getValues()[0];
-
-  const newRow = headers.map((header) => {
-    const headerName = String(header || "").trim();
-    const dataKey = Object.keys(fieldMapping).find(
-      (key) => String(fieldMapping[key] || "").trim() === headerName
-    );
-    if (!dataKey) return "";
-    const value = valueFromKeys_(data, [dataKey]);
-    return value === undefined || value === null ? "" : value;
-  });
-
-  targetSheet.appendRow(newRow);
-  return { success: true };
 }
