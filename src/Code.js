@@ -743,14 +743,43 @@ function authenticateUser(credentialsOrEmail, password) {
     }
 
     const match = users.find((record) => {
-      const username = normalizeIdentity_(
-        valueFromKeys_(record, ["Username", "Email", "User", "Login"])
-      );
-      const userId = normalizeIdentity_(
-        valueFromKeys_(record, ["User_Id", "UserID", "Id", "ID"])
-      );
-      return (
-        credentials.username === username || credentials.username === userId
+      const identifiers = new Set();
+
+      const usernameRaw = valueFromKeys_(record, [
+        "Username",
+        "User",
+        "Login",
+      ]);
+      const emailRaw = valueFromKeys_(record, ["Email", "Email_Address"]);
+      const userIdRaw = valueFromKeys_(record, [
+        "User_Id",
+        "UserID",
+        "Id",
+        "ID",
+      ]);
+
+      if (usernameRaw) {
+        identifiers.add(normalizeIdentity_(usernameRaw));
+      }
+
+      if (emailRaw) {
+        identifiers.add(normalizeIdentity_(emailRaw));
+        const emailParts = String(emailRaw).split("@");
+        if (emailParts.length > 1) {
+          identifiers.add(normalizeIdentity_(emailParts[0]));
+        }
+      }
+
+      if (userIdRaw) {
+        identifiers.add(normalizeIdentity_(userIdRaw));
+      }
+
+      identifiers.delete("");
+      identifiers.delete(null);
+      identifiers.delete(undefined);
+
+      return Array.from(identifiers).some(
+        (identifier) => identifier && identifier === credentials.username
       );
     });
 
