@@ -1,149 +1,140 @@
-# 🚀 Nijjara ERP (v2): System Overview
+## Nijjara ERP: System Overview >>
 
-This repository contains the serverless, Google-based ERP system for Nijjara. It is built as a high-performance Single-Page Application (SPA) designed to manage Project Management, Finance, HR, and System Administration modules.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+|_|>> ALL THE SYSTEM SHOULD BE IN ARABIC FOR THE USER INTERFACE <<|_|
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+➊ Detailed Explanation: The “Smart Start” System Logic  
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+▸ Data-driven Single-Page Application (SPA):  
+ The `nijjara_erp-smart_start` system’s `Code.js` acts as an “engine” that reads instructions directly from your Google Sheet—not from hard-coded logic.
 
-This project (v2) is a "Fresh Start" rebuild, focusing on a clean, 100% data-driven architecture.
+╭─ ➊ The Boot-up  
+│  
+│ ▸ User Visits URL: User opens your deployed web app URL.  
+│ ▸ Serve App.html: The `doGet()` function in `Code.js` runs, serving `App.html` to the user's browser.  
+│ ▸ Render Login: `App.html` loads, its internal JavaScript runs, sees the user is not authenticated, and shows the `id="login-view"` section.  
+╰─────────────────────────
 
-## 🏛️ Core Architecture: The "Data-Driven" Engine
+╭─ ➋ Authentication  
+│  
+│ ▸ User Submits: User enters email and password (e.g., `mkhoraiby` and `210388`) and clicks “Sign in.”  
+│ ▸ Call Backend: JavaScript in `App.html` calls `google.script.run.authenticateUser(...)` in `Code.js`.  
+│ ▸ `authenticateUser` Runs:  
+│  • Finds the `SYS_Users` tab.  
+│  • Searches for the user’s email (`mkhoraiby`).  
+│  • Finds the `Password_Hash` column for that user.  
+│  • Hashes the provided password using `hashPassword_`.  
+│  • Compares the new hash to the stored hash.  
+│  • If they match, login is successful.  
+╰─────────────────────────
 
-The **source of truth** for this system is not the code, but the **Google Sheet database**. The code is merely an engine that reads the database configuration and builds the User Interface dynamically.
+╭─ ➌ The “Bootstrap” (Most Critical Step)  
+│  
+│ ▸ Gather All Data: After login, `authenticateUser` calls `getBootstrapData()`.  
+│ ▸ `getBootstrapData()` Runs:  
+│  • Reads `SYS_Tab_Register` for navigation menu.  
+│  • Reads `SYS_Dynamic_Forms` for form field definitions.  
+│  • Reads `SYS_Dropdowns` for dropdown options.  
+│  • Reads `SYS_Role_Permissions` for user’s role permissions.  
+│ ▸ Return Object: Bundles all data into a “bootstrap” object and returns it to `App.html`.  
+╰─────────────────────────
 
-The entire application logic is defined by three (3) "Engine Sheets":
+╭─ ➍ The Frontend Wakes Up  
+│  
+│ ▸ Store State: JavaScript stores the bootstrap object in `window.ERP_STATE`.  
+│ ▸ Render UI:  
+│  • Populates user’s name in header.  
+│  • Calls `renderNavigation()` to build sidebar.  
+│  • Calls `buildCommandList()` for Ctrl+K palette.  
+│  • Hides `login-view`, shows `workspace-view`.  
+│  • Loads default sub-tab (e.g., `Sub_SYS_Overview`).  
+╰─────────────────────────
 
-1.  **`SYS_Tab_Register` (The Map):**
-    * Defines every module (e.g., Projects, Finance) and sub-tab (e.g., Clients, Employees).
-    * Tells the code *what* data to show (`Source_Sheet`) and *how* to show it (`Render_Mode`).
+╭─ ➎ How a User Views Data (e.g., “View Users”)  
+│  
+│ ▸ User Clicks: “Users” sub-tab in sidebar.  
+│ ▸ Call Backend: `google.script.run.getSubTabViewData('Sub_SYS_Users')`.  
+│ ▸ `getSubTabViewData()` Runs:  
+│  • Finds `Sub_SYS_Users` in `SYS_Tab_Register`.  
+│  • Reads `Source_Sheet` → `PV_SYS_Users_Table`.  
+│  • Fetches data from that sheet.  
+│ ▸ Render ViewTab:  
+│  • Success handler receives data.  
+│  • Calls `buildDynamicViewPad()` from `ViewTab.js.html`.  
+│  • Dynamically builds “Add New” button, search bar, filters, and data table.  
+╰─────────────────────────
 
-2.  **`SYS_Dynamic_Forms` (The Form Builder):**
-    * Defines every single field for every "Add" or "Edit" popup in the system, linked by a `Form_ID`.
-    * Controls field types (Text, Dropdown), validation (Mandatory), and permissions (`Role_ID`).
-    * If a `Form_ID` exists here, the "Add/Edit" functionality for that module is **automatically activated**.
+╭─ ➏ How a User Adds Data (e.g., “Add New User”)  
+│  
+│ ▸ User Clicks: “Add New User” button.  
+│ ▸ Call Backend: `getFormPayload('FORM_SYS_AddUser')`.  
+│ ▸ `getFormPayload()` Runs:  
+│  • Opens `SYS_Dynamic_Forms`.  
+│  • Finds rows with `Form_ID = FORM_SYS_AddUser`.  
+│  • Reads `Tab_Name`, `Section_Header`, `Field_Label`, `Field_Type`, etc.  
+│  • Bundles into a “form” object.  
+│ ▸ Render FormModal:  
+│  • Frontend receives form object.  
+│  • Calls `form-builder` from `FormModal.js.html`.  
+│  • Dynamically builds popup with tabs, sections, fields.  
+│ ▸ User Saves:  
+│  • Calls `saveRecord('FORM_SYS_AddUser', { ...data... })`.  
+│  • Backend reads `SYS_Dynamic_Forms` for target sheet/columns.  
+│  • Builds new row and appends to `SYS_Users`.  
+╰─────────────────────────
 
-3.  **`SYS_Dropdowns` (The Data Lists):**
-    * Manages all dropdown list content (e.g., Project Status, Payment Method) used across all forms.
+✔ This is the complete, 100% data-driven logic.  
+ Your code is the engine.  
+ Your Google Sheet is the fuel and instruction manual.
 
-## ⚙️ Technology Stack
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+➋ Complete Google Sheet Schema (100% Functional)  
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+▸ These tabs are critical. Their headers must match exactly.
 
-* **Backend:** Google Apps Script (`Code.gs`). Handles authentication, data fetching, and all database interactions.
-* **Frontend:** A single `App.html` file (SPA) that hosts the UI.
-* **Database:** Google Sheets (acting as both a relational database and the app's config file).
-* **UI Builders:**
-    * `ViewTab.js.html`: A client-side script that builds dynamic data tables and search bars.
-    * `FormModal.js.html`: A client-side script that builds dynamic popup forms with vertical tabs.
+➊ SYS_Users  
+[User_Id, Full_Name, Username, Email, Job_Title, Department, Role_Id, IsActive, Password_Hash, Last_Login, Created_At, Created_By, Updated_At, Updated_By]
 
-## 💡 Core Logic Flow (v2)
+➋ SYS_Tab_Register  
+[Record_Type, Tab_ID, Tab_Label_EN, Tab_Label_AR, Sub_ID, Sub_Label_EN, Sub_Label_AR, Route, Sort_Order, Source_Sheet, Render_Mode, Add_Form_ID, Edit_Form_ID, View_Label, Add_Label, Permissions, Search_Bar, Filter_Options]
 
-The new v2 architecture is clean, fast, and driven by commands.
+➌ SYS_Dynamic_Forms  
+[Form_ID, Form_Title, Tab_ID, Tab_Name, Section_Header, Field_ID, Field_Label, Field_Type, Source_Sheet, Source_Range, Mandatory, Default_Value, Dropdown_Key, Target_Sheet, Target_Column, Role_ID, Show, Quick_Actions, Pane, Field_Order, Help_Text, Placeholder]
 
-1.  **Boot:** User loads the Web App URL. `doGet()` serves the `App.html` shell.
-2.  **Login:** User enters credentials. `authenticateUser(user, pass)` in `Code.gs` validates them against the `SYS_Users` sheet.
-3.  **Bootstrap:** On success, the backend runs **`getBootstrapData()`**. This single function gathers *all* config data (all tabs, all form definitions, all dropdowns, and user permissions) and sends it to the frontend in one "bootstrap" object.
-4.  **Command Palette:** The UI (powered by `CommandPalette.js.html`) initializes. The user can type "Add Client", "View Projects", or "Run Payroll Report". This palette uses the bootstrap data to know what commands are available.
-5.  **Dynamic Rendering (The "Engine" in Action):**
-    * **User Action:** User selects "View Clients".
-    * **Frontend:** Calls `google.script.run.getSubTabViewData('Sub_PRJ_Clients')`.
-    * **Backend:** `getSubTabViewData()` reads `SYS_Tab_Register` to find the `Source_Sheet` (e.g., `PV_PRJ_Clients`) and fetches its data.
-    * **Frontend:** `ViewTab.js` receives the data and builds the dynamic table view.
-6.  **Dynamic Forms:**
-    * **User Action:** User clicks "Add New Client".
-    * **Frontend:** Calls `google.script.run.getFormPayload('FORM_PRJ_AddClient')`.
-    * **Backend:** `getFormPayload()` reads `SYS_Dynamic_Forms` and pulls all fields matching that `Form_ID`.
-    * **Frontend:** `FormModal.js` receives the field list and builds the "Add Client" popup, complete with all tabs and fields.
+➍ SYS_Dropdowns  
+[Key, English_Title, Arabic_Title, Is_Active, Sort_Order, Value, Group]
 
-This architecture ensures that to add a new module, page, or form, **no new JavaScript code is required**. The work is done 100% by adding new configuration rows to the "Engine Sheets."
+➎ SYS_Role_Permissions  
+[Role_Id, Permission_Key, Scope, Allowed, Constraints, Created_At, Created_By, Updated_At, Updated_By]
 
-## 🚀 Setup
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+➌ Supporting System Sheets  
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+➏ SYS_Sessions  
+[Session_Id, User_Id, Actor_Email, Type, Status, Started_At, Created_At, Created_By]
 
-1.  **Spreadsheet ID:** Open your Google Sheet and copy the ID from the URL. The URL will look like this: `https://docs.google.com/spreadsheets/d/1FTubSc1-RhoAGiRA6rMKw3wQ30NnSYi0fNHUcqzeTEw/edit`. Replace `"YOUR_SPREADSHEET_ID_HERE"` in `Code.js` with your actual spreadsheet ID.
-2.  **Run Setup Function:** In the Google Apps Script editor, select the `setup` function from the dropdown menu and click the "Run" button. This will create the `Users` and `Sessions` sheets in your spreadsheet.
+➐ SYS_Audit_Log  
+[Timestamp, User, Action, Details, Entity, Entity_Id]
 
-📋 Nijjara ERP (v2): Action Plan & To-Do List
-Here is our structured plan. We will use this to track every task, ensuring we only build clean, necessary code.
+➑ SYS_Roles  
+[Role_Id, Role_Title, Description]
 
-Phase 1: Foundation (The New Project)
-[x] Task 1.1 (Done): Create new Google Apps Script project.
+➒ SYS_Permissions  
+[Permission_Key, Permission_Label, Description, Category]
 
-[x] Task 1.2 (Done): Create and link new Google Sheet (copied from original).
+➓ SYS_Settings  
+[Setting_Key, Setting_Value]
 
-[ ] Task 1.3 (In Progress): Create base Code.gs file (with doGet, include, and SPREADSHEET_ID).
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+➍ Other Notes  
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+▸ Other SYS* tabs like `SYS_User_Properties`, `SYS_PubHolidays`, etc. are supported.  
+▸ Data & View Sheets (PV*, PRJ*, FIN*, HR*):  
+ • View Sheets (PV*): Must match `Source_Sheet` in `SYS_Tab_Register`.  
+ • Data Sheets (PRJ_Main, HR_Employees, etc.): Must match `Target_Sheet` and `Target_Column` in `SYS_Dynamic_Forms`.
 
-[ ] Task 1.4: Create base App.html file (the main SPA shell).
-
-[ ] Task 1.5: Create helper file Utils.gs (We will move utility functions like sheetToObjects here).
-
-Phase 2: Backend (Porting The "Clean" Engine)
-[x] Task 2.1: Authentication:
-
-[x] Port authenticateUser from old Code.js.
-
-[x] Port createSession and related session logic.
-
-[ ] Task 2.2: Bootstrap:
-
-[ ] Port getBootstrapData (The most important function).
-
-[ ] Port all sub-functions it relies on (e.g., getTabs, getForms, getPermissions).
-
-[ ] Task 2.3: Data View Engine:
-
-[ ] Port getSubTabViewData (This powers the ViewAdd mode).
-
-[ ] Task 2.4: Form Engine:
-
-[ ] Port getFormPayload (This builds the popups).
-
-[ ] Task 2.5: Save Engine:
-
-[ ] Port saveRecord (The single function that reads SYS_Dynamic_Forms to save data).
-
-Phase 3: Frontend (The New "Command" UI)
-[ ] Task 3.1: Design App.html (Login Screen).
-
-[ ] Task 3.2: Design App.html (Main Workspace):
-
-[ ] Header (User menu, etc.)
-
-[ ] Main Content Area (<main id="main-content-area"></main>)
-
-[ ] Global Modal Container (<div id="global-modal-container"></div>)
-
-[ ] Task 3.3: Create CommandPalette.js.html (The new Ctrl+K logic).
-
-[ ] Logic to parse window.ERP_STATE and build commands.
-
-[ ] Logic to call loadSubTabContent or loadFormModal based on command.
-
-[ ] Task 3.4: Port Core UI Engines (No changes needed):
-
-[ ] Port ViewTab.js.html
-
-[ ] Port FormModal.js.html
-
-[ ] Port ViewTab.css.html
-
-[ ] Port FormModal.css.html
-
-Phase 4: Activation (Data-Entry Only)
-[ ] Task 4.1: System Module:
-
-[ ] Review SYS_Tab_Register for Tab_SYS_Management.
-
-[ ] Review FORM_SYS_AddUser, FORM_SYS_EditUser in SYS_Dynamic_Forms.
-
-[ ] Task 4.2: Projects Module:
-
-[ ] Review SYS_Tab_Register for Tab_PRJ_Management.
-
-[ ] (Crucial) Define all FORM_... entries in SYS_Dynamic_Forms for all project sub-tabs.
-
-[ ] Task 4.3: Finance Module:
-
-[ ] Review SYS_Tab_Register for Tab_FIN_Management.
-
-[ ] (Crucial) Define all FORM_... entries in SYS_Dynamic_Forms for all finance sub-tabs.
-
-[ ] Task 4.4: HR Module:
-
-[ ] Review SYS_Tab_Register for Tab_HR_Management.
-
-[ ] (Crucial) Define all FORM_... entries in SYS_Dynamic_Forms for all HR sub-tabs.
+━━━━━━━━━━━━━━━━━━━━━━━━━━  
+✔ This is the complete and detailed logic and schema for your new system.  
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━.
