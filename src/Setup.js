@@ -1,53 +1,54 @@
 if (typeof SPREADSHEET_ID === "undefined") {
   throw new Error(
-    "Setup.js requires a global SPREADSHEET_ID constant (defined in Code.js)."
+    "Setup.js requires the SPREADSHEET_ID constant defined in Code.js."
   );
 }
 
+/**
+ * Map each engine sheet to the staging tab(s) that hold its seed data.
+ * Provide explicit names where you know them; the loader will also try
+ * common Seed/Source naming patterns automatically.
+ */
 const ENGINE_SHEETS = [
   {
     sheetName: "SYS_Users",
-    fileId: "", // Optional: paste the Drive file ID for a guaranteed match
-    sources: [
-      "Nijjara_ERP-Smart_Start - SYS_Users.csv",
-      "SYS_Users.csv",
-      "SYS_Users",
+    sourceTabs: [
+      "Seed_SYS_Users",
+      "SYS_Users_Seed",
+      "SYS_Users Source",
+      "SYS_Users (Seed)",
     ],
   },
   {
     sheetName: "SYS_Tab_Register",
-    fileId: "",
-    sources: [
-      "Nijjara_ERP-Smart_Start - SYS_Tab_Register.csv",
-      "SYS_Tab_Register.csv",
-      "SYS_Tab_Register",
+    sourceTabs: [
+      "Seed_SYS_Tab_Register",
+      "SYS_Tab_Register_Seed",
+      "SYS_Tab_Register Source",
     ],
   },
   {
     sheetName: "SYS_Dynamic_Forms",
-    fileId: "",
-    sources: [
-      "Nijjara_ERP-Smart_Start - SYS_Dynamic_Forms.csv",
-      "SYS_Dynamic_Forms.csv",
-      "SYS_Dynamic_Forms",
+    sourceTabs: [
+      "Seed_SYS_Dynamic_Forms",
+      "SYS_Dynamic_Forms_Seed",
+      "SYS_Dynamic_Forms Source",
     ],
   },
   {
     sheetName: "SYS_Dropdowns",
-    fileId: "",
-    sources: [
-      "Nijjara_ERP-Smart_Start - SYS_Dropdowns.csv",
-      "SYS_Dropdowns.csv",
-      "SYS_Dropdowns",
+    sourceTabs: [
+      "Seed_SYS_Dropdowns",
+      "SYS_Dropdowns_Seed",
+      "SYS_Dropdowns Source",
     ],
   },
   {
     sheetName: "SYS_Role_Permissions",
-    fileId: "",
-    sources: [
-      "Nijjara_ERP-Smart_Start - SYS_Role_Permissions.csv",
-      "SYS_Role_Permissions.csv",
-      "SYS_Role_Permissions",
+    sourceTabs: [
+      "Seed_SYS_Role_Permissions",
+      "SYS_Role_Permissions_Seed",
+      "SYS_Role_Permissions Source",
     ],
   },
 ];
@@ -55,219 +56,173 @@ const ENGINE_SHEETS = [
 function runInitialSetup() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
   ENGINE_SHEETS.forEach((config) => {
-    populateSheetFromCSV_(spreadsheet, config);
+    hydrateEngineSheet_(spreadsheet, config);
   });
   SpreadsheetApp.flush();
 }
 
-function populateSheetFromCSV_(spreadsheet, sheetConfig) {
-  if (!sheetConfig || !sheetConfig.sheetName) {
-    throw new Error("populateSheetFromCSV_: sheet configuration is invalid.");
+function hydrateEngineSheet_(spreadsheet, config) {
+  if (!config || !config.sheetName) {
+    throw new Error(
+      "hydrateEngineSheet_: sheet configuration must include sheetName."
+    );
   }
 
-  const { sheetName } = sheetConfig;
-  if (!sheetName) {
-    throw new Error("populateSheetFromCSV_: sheetName is required.");
-  }
+  const targetSheetName = config.sheetName;
+  const sourceSheet = resolveSourceSheet_(
+    spreadsheet,
+    targetSheetName,
+    config.sourceTabs || []
+  );
 
-  const rows = getSourceRows_(spreadsheet, sheetConfig);
-  if (!rows || !rows.length) {
+  if (!sourceSheet) {
     Logger.log(
-      `populateSheetFromCSV_: No external data found for ${sheetName}. ` +
-        "Leaving the sheet untouched."
+      `hydrateEngineSheet_: Skipping ${targetSheetName} (no staging tab found).`
     );
     return;
   }
 
-  let sheet = spreadsheet.getSheetByName(sheetName);
-  if (!sheet) {
-    sheet = spreadsheet.insertSheet(sheetName);
+  const range = sourceSheet.getDataRange();
+  if (!range) {
+    Logger.log(
+      `hydrateEngineSheet_: Staging tab ${sourceSheet.getName()} has no data.`
+    );
+    return;
   }
 
-  sheet.clearContents();
-  sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+  const values = normalizeRows_(range.getValues());
+  if (!values || !values.length) {
+    Logger.log(
+      `hydrateEngineSheet_: Staging tab ${sourceSheet.getName()} is empty.`
+    );
+    return;
+  }
+
+  let target = spreadsheet.getSheetByName(targetSheetName);
+  if (!target) {
+    target = spreadsheet.insertSheet(targetSheetName);
+  }
+
+  target.clearContents();
+  target.getRange(1, 1, values.length, values[0].length).setValues(values);
+
+  Logger.log(
+    `hydrateEngineSheet_: Loaded ${values.length} row(s) into ${targetSheetName} from ${sourceSheet.getName()}.`
+  );
 }
 
-function getSourceRows_(spreadsheet, sheetConfig) {
-  const {
-    fileId = "",
-    sources = [],
-    sheetName = "Unknown Sheet",
-  } = sheetConfig || {};
-  const seen = new Set();
-  const inspectedNames = [];
-  let attemptCount = 0;
+function resolveSourceSheet_(spreadsheet, targetSheetName, explicitNames) {
+  const normalizedTarget = normalizeName_(targetSheetName);
+  const candidateNames = buildCandidateNames_(targetSheetName, explicitNames);
 
-  const sourceList = Array.isArray(sources) ? sources.slice() : [];
-
-  // Pass 1: try to read from local tabs within the current spreadsheet.
-  for (let i = 0; i < sourceList.length; i++) {
-    const rawName = (sourceList[i] || "").trim();
-    if (!rawName || seen.has(rawName)) continue;
-    seen.add(rawName);
-    inspectedNames.push(rawName);
-    attemptCount++;
-
-    const localRows = getRowsFromLocalSheet_(spreadsheet, rawName, sheetName);
-    if (localRows && localRows.length) {
-      Logger.log(
-        `populateSheetFromCSV_: Loaded data for ${sheetName} from local sheet tab "${rawName}".`
-      );
-      return localRows;
+  // Pass 1: direct, case sensitive matches.
+  for (let i = 0; i < candidateNames.length; i++) {
+    const name = candidateNames[i];
+    const sheet = spreadsheet.getSheetByName(name);
+    if (isValidSourceSheet_(sheet, targetSheetName)) {
+      return sheet;
     }
   }
 
-  // Pass 2: explicit fileId override (if provided).
-  if (fileId) {
-    const file = safeGetFileById_(fileId);
-    if (file) {
-      const rows = extractRowsFromFile_(file);
-      if (rows && rows.length) {
-        Logger.log(
-          `populateSheetFromCSV_: Loaded data for ${sheetName} using fileId ${fileId}.`
-        );
-        return rows;
-      }
-      Logger.log(
-        `populateSheetFromCSV_: FileId ${fileId} was found but contained no usable rows.`
-      );
-    } else {
-      Logger.log(
-        `populateSheetFromCSV_: FileId ${fileId} could not be opened. Falling back to name search.`
-      );
+  // Pass 2: normalized (case/spacing-insensitive) matches.
+  const normalizedCandidates = candidateNames.map((name) =>
+    normalizeName_(name)
+  );
+  const allSheets = spreadsheet.getSheets();
+  for (let i = 0; i < allSheets.length; i++) {
+    const sheet = allSheets[i];
+    if (!isValidSourceSheet_(sheet, targetSheetName)) continue;
+    const normalizedSheet = normalizeName_(sheet.getName());
+    if (normalizedCandidates.indexOf(normalizedSheet) >= 0) {
+      return sheet;
     }
   }
 
-  // Pass 3: look for separate Drive files by the same names.
-  for (let i = 0; i < sourceList.length; i++) {
-    const rawName = (sourceList[i] || "").trim();
-    if (!rawName || seen.has(rawName)) continue;
-    seen.add(rawName);
-    inspectedNames.push(rawName);
-    attemptCount++;
-    const file = getFileHandleByName_(rawName);
-    if (file) {
-      const rows = extractRowsFromFile_(file);
-      if (rows && rows.length) {
-        Logger.log(
-          `populateSheetFromCSV_: Loaded data for ${sheetName} from Drive item "${file.getName()}".`
-        );
-        return rows;
-      }
-      Logger.log(
-        `populateSheetFromCSV_: Drive item "${file.getName()}" contained no usable rows.`
-      );
-    }
-
-    if (rawName.toLowerCase().endsWith(".csv")) {
-      const fallback = rawName.slice(0, -4).trim();
-      if (fallback && !seen.has(fallback)) {
-        seen.add(fallback);
-        inspectedNames.push(fallback);
-        const fallbackFile = getFileHandleByName_(fallback);
-        if (fallbackFile) {
-          const rows = extractRowsFromFile_(fallbackFile);
-          if (rows && rows.length) {
-            Logger.log(
-              `populateSheetFromCSV_: Loaded data for ${sheetName} from fallback Drive item "${fallbackFile.getName()}".`
-            );
-            return rows;
-          }
-          Logger.log(
-            `populateSheetFromCSV_: Fallback Drive item "${fallbackFile.getName()}" contained no usable rows.`
-          );
-        }
-      }
+  // Pass 3: partial matches (the sheet name contains the target in some form).
+  for (let i = 0; i < allSheets.length; i++) {
+    const sheet = allSheets[i];
+    if (!isValidSourceSheet_(sheet, targetSheetName)) continue;
+    const normalizedSheet = normalizeName_(sheet.getName());
+    if (
+      normalizedSheet.indexOf(normalizedTarget) >= 0 &&
+      normalizedSheet !== normalizedTarget
+    ) {
+      return sheet;
     }
   }
 
-  if (!attemptCount) {
-    Logger.log(
-      `populateSheetFromCSV_: No candidates provided for ${sheetName}. Please supply a fileId or at least one candidate name.`
-    );
-  } else {
-    Logger.log(
-      `populateSheetFromCSV_: Attempted candidates for ${sheetName}: ${inspectedNames.join(
-        ", "
-      )}`
-    );
-  }
-
+  Logger.log(
+    `resolveSourceSheet_: No staging tab found for ${targetSheetName}. Checked candidates: ${candidateNames.join(
+      ", "
+    )}`
+  );
   return null;
 }
 
-function getFileHandleByName_(name) {
-  const exact = DriveApp.getFilesByName(name);
-  if (exact.hasNext()) {
-    return exact.next();
+function buildCandidateNames_(sheetName, extraNames) {
+  const unique = new Set();
+  const add = (name) => {
+    const trimmed = (name || "").trim();
+    if (!trimmed) return;
+    if (!unique.has(trimmed)) {
+      unique.add(trimmed);
+    }
+  };
+
+  (extraNames || []).forEach(add);
+
+  const base = sheetName;
+  const baseNoPrefix = base.replace(/^SYS_/, "");
+
+  add(`Seed_${base}`);
+  add(`${base}_Seed`);
+  add(`${base} Seed`);
+  add(`${base} (Seed)`);
+  add(`Source_${base}`);
+  add(`${base}_Source`);
+  add(`${base} Source`);
+  add(`Staging_${base}`);
+  add(`${base}_Staging`);
+
+  if (baseNoPrefix && baseNoPrefix !== base) {
+    add(`Seed_${baseNoPrefix}`);
+    add(`${baseNoPrefix}_Seed`);
+    add(`${baseNoPrefix} Seed`);
+    add(`${baseNoPrefix} (Seed)`);
+    add(`Source_${baseNoPrefix}`);
+    add(`${baseNoPrefix}_Source`);
+    add(`${baseNoPrefix} Source`);
+    add(`Staging_${baseNoPrefix}`);
+    add(`${baseNoPrefix}_Staging`);
   }
 
-  const escaped = name.replace(/'/g, "\\'");
-  const searchQuery = `title contains '${escaped}' and trashed = false`;
-  const search = DriveApp.searchFiles(searchQuery);
-  if (search.hasNext()) {
-    return search.next();
-  }
-
-  return null;
+  return Array.from(unique);
 }
 
-function extractRowsFromFile_(file) {
-  const mimeType = file.getMimeType();
-  if (mimeType === MimeType.GOOGLE_SHEETS) {
-    const ss = SpreadsheetApp.openById(file.getId());
-    const sheets = ss.getSheets();
-    for (let i = 0; i < sheets.length; i++) {
-      const sheet = sheets[i];
-      const range = sheet ? sheet.getDataRange() : null;
-      const values = range ? range.getValues() : null;
-      const normalized = normalizeRows_(values);
-      if (normalized && normalized.length) {
-        return normalized;
-      }
-    }
-    return null;
-  }
-
-  const blob = file.getBlob();
-  const csvRows = Utilities.parseCsv(blob.getDataAsString());
-  return normalizeRows_(csvRows);
+function isValidSourceSheet_(sheet, targetSheetName) {
+  if (!sheet) return false;
+  if (sheet.getName() === targetSheetName) return false;
+  if (sheet.isSheetHidden()) return false;
+  const range = sheet.getDataRange();
+  return !!(range && range.getNumRows() && range.getNumColumns());
 }
 
 function normalizeRows_(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
-  const maxColumns = rows.reduce(
+  const maxCols = rows.reduce(
     (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
     0
   );
-  if (maxColumns === 0) return null;
+  if (!maxCols) return null;
   return rows.map((row) => {
-    const source = Array.isArray(row) ? row : [row];
-    if (source.length === maxColumns) return source;
-    const copy = source.slice(0, maxColumns);
-    while (copy.length < maxColumns) copy.push("");
-    return copy;
+    const working = Array.isArray(row) ? row.slice() : [row];
+    while (working.length < maxCols) {
+      working.push("");
+    }
+    return working;
   });
 }
 
-function getRowsFromLocalSheet_(spreadsheet, sourceTabName, targetSheetName) {
-  if (!sourceTabName || sourceTabName === targetSheetName) return null;
-  const sourceSheet = spreadsheet.getSheetByName(sourceTabName);
-  if (!sourceSheet) return null;
-  const range = sourceSheet.getDataRange();
-  if (!range) return null;
-  const values = range.getValues();
-  return normalizeRows_(values);
-}
-
-function safeGetFileById_(fileId) {
-  if (!fileId) return null;
-  try {
-    return DriveApp.getFileById(fileId);
-  } catch (err) {
-    Logger.log(
-      `populateSheetFromCSV_: Unable to open file with ID ${fileId}. ${err}`
-    );
-    return null;
-  }
+function normalizeName_(name) {
+  return (name || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
 }
