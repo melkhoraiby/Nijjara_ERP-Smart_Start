@@ -1,9 +1,14 @@
-const SPREADSHEET_ID = "1FTubSc1-RhoAGiRA6rMKw3wQ30NnSYi0fNHUcqzeTEw";
+if (typeof SPREADSHEET_ID === "undefined") {
+  throw new Error(
+    "Setup.js requires a global SPREADSHEET_ID constant (defined in Code.js)."
+  );
+}
 
 const ENGINE_SHEETS = [
   {
     sheetName: "SYS_Users",
-    candidates: [
+    fileId: "", // Optional: paste the Drive file ID for a guaranteed match
+    sources: [
       "Nijjara_ERP-Smart_Start - SYS_Users.csv",
       "SYS_Users.csv",
       "SYS_Users",
@@ -11,7 +16,8 @@ const ENGINE_SHEETS = [
   },
   {
     sheetName: "SYS_Tab_Register",
-    candidates: [
+    fileId: "",
+    sources: [
       "Nijjara_ERP-Smart_Start - SYS_Tab_Register.csv",
       "SYS_Tab_Register.csv",
       "SYS_Tab_Register",
@@ -19,7 +25,8 @@ const ENGINE_SHEETS = [
   },
   {
     sheetName: "SYS_Dynamic_Forms",
-    candidates: [
+    fileId: "",
+    sources: [
       "Nijjara_ERP-Smart_Start - SYS_Dynamic_Forms.csv",
       "SYS_Dynamic_Forms.csv",
       "SYS_Dynamic_Forms",
@@ -27,7 +34,8 @@ const ENGINE_SHEETS = [
   },
   {
     sheetName: "SYS_Dropdowns",
-    candidates: [
+    fileId: "",
+    sources: [
       "Nijjara_ERP-Smart_Start - SYS_Dropdowns.csv",
       "SYS_Dropdowns.csv",
       "SYS_Dropdowns",
@@ -35,7 +43,8 @@ const ENGINE_SHEETS = [
   },
   {
     sheetName: "SYS_Role_Permissions",
-    candidates: [
+    fileId: "",
+    sources: [
       "Nijjara_ERP-Smart_Start - SYS_Role_Permissions.csv",
       "SYS_Role_Permissions.csv",
       "SYS_Role_Permissions",
@@ -45,29 +54,29 @@ const ENGINE_SHEETS = [
 
 function runInitialSetup() {
   const spreadsheet = SpreadsheetApp.openById(SPREADSHEET_ID);
-  ENGINE_SHEETS.forEach(({ sheetName, candidates }) => {
-    populateSheetFromCSV_(spreadsheet, candidates, sheetName);
+  ENGINE_SHEETS.forEach((config) => {
+    populateSheetFromCSV_(spreadsheet, config);
   });
   SpreadsheetApp.flush();
 }
 
-function populateSheetFromCSV_(spreadsheet, nameCandidates, sheetName) {
+function populateSheetFromCSV_(spreadsheet, sheetConfig) {
+  if (!sheetConfig || !sheetConfig.sheetName) {
+    throw new Error("populateSheetFromCSV_: sheet configuration is invalid.");
+  }
+
+  const { sheetName } = sheetConfig;
   if (!sheetName) {
     throw new Error("populateSheetFromCSV_: sheetName is required.");
   }
 
-  const fileBlob = findFileBlob_(nameCandidates || []);
-  if (!fileBlob) {
-    throw new Error(
-      `populateSheetFromCSV_: Could not locate a CSV/Sheet for ${sheetName}.`
+  const rows = getSourceRows_(spreadsheet, sheetConfig);
+  if (!rows || !rows.length) {
+    Logger.log(
+      `populateSheetFromCSV_: No external data found for ${sheetName}. ` +
+        "Leaving the sheet untouched."
     );
-  }
-
-  const csvRows = Utilities.parseCsv(fileBlob.getDataAsString());
-  if (!Array.isArray(csvRows) || !csvRows.length) {
-    throw new Error(
-      `populateSheetFromCSV_: Source data for ${sheetName} is empty.`
-    );
+    return;
   }
 
   let sheet = spreadsheet.getSheetByName(sheetName);
@@ -76,41 +85,112 @@ function populateSheetFromCSV_(spreadsheet, nameCandidates, sheetName) {
   }
 
   sheet.clearContents();
-  sheet.getRange(1, 1, csvRows.length, csvRows[0].length).setValues(csvRows);
+  sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
 }
 
-function findFileBlob_(nameCandidates) {
+function getSourceRows_(spreadsheet, sheetConfig) {
+  const {
+    fileId = "",
+    sources = [],
+    sheetName = "Unknown Sheet",
+  } = sheetConfig || {};
   const seen = new Set();
-  const candidates = Array.isArray(nameCandidates) ? nameCandidates : [];
+  const inspectedNames = [];
+  let attemptCount = 0;
 
-  for (let i = 0; i < candidates.length; i++) {
-    const rawName = (candidates[i] || "").trim();
+  const sourceList = Array.isArray(sources) ? sources.slice() : [];
+
+  // Pass 1: try to read from local tabs within the current spreadsheet.
+  for (let i = 0; i < sourceList.length; i++) {
+    const rawName = (sourceList[i] || "").trim();
     if (!rawName || seen.has(rawName)) continue;
     seen.add(rawName);
+    inspectedNames.push(rawName);
+    attemptCount++;
 
+    const localRows = getRowsFromLocalSheet_(spreadsheet, rawName, sheetName);
+    if (localRows && localRows.length) {
+      Logger.log(
+        `populateSheetFromCSV_: Loaded data for ${sheetName} from local sheet tab "${rawName}".`
+      );
+      return localRows;
+    }
+  }
+
+  // Pass 2: explicit fileId override (if provided).
+  if (fileId) {
+    const file = safeGetFileById_(fileId);
+    if (file) {
+      const rows = extractRowsFromFile_(file);
+      if (rows && rows.length) {
+        Logger.log(
+          `populateSheetFromCSV_: Loaded data for ${sheetName} using fileId ${fileId}.`
+        );
+        return rows;
+      }
+      Logger.log(
+        `populateSheetFromCSV_: FileId ${fileId} was found but contained no usable rows.`
+      );
+    } else {
+      Logger.log(
+        `populateSheetFromCSV_: FileId ${fileId} could not be opened. Falling back to name search.`
+      );
+    }
+  }
+
+  // Pass 3: look for separate Drive files by the same names.
+  for (let i = 0; i < sourceList.length; i++) {
+    const rawName = (sourceList[i] || "").trim();
+    if (!rawName || seen.has(rawName)) continue;
+    seen.add(rawName);
+    inspectedNames.push(rawName);
+    attemptCount++;
     const file = getFileHandleByName_(rawName);
     if (file) {
-      const mimeType = getFileMimeType_(file);
-      if (mimeType === "application/vnd.google-apps.spreadsheet") {
-        return Drive.Files.export(file.getId(), "text/csv");
+      const rows = extractRowsFromFile_(file);
+      if (rows && rows.length) {
+        Logger.log(
+          `populateSheetFromCSV_: Loaded data for ${sheetName} from Drive item "${file.getName()}".`
+        );
+        return rows;
       }
-      return file.getBlob();
+      Logger.log(
+        `populateSheetFromCSV_: Drive item "${file.getName()}" contained no usable rows.`
+      );
     }
 
     if (rawName.toLowerCase().endsWith(".csv")) {
       const fallback = rawName.slice(0, -4).trim();
       if (fallback && !seen.has(fallback)) {
         seen.add(fallback);
+        inspectedNames.push(fallback);
         const fallbackFile = getFileHandleByName_(fallback);
         if (fallbackFile) {
-          const fallbackMime = getFileMimeType_(fallbackFile);
-          if (fallbackMime === "application/vnd.google-apps.spreadsheet") {
-            return Drive.Files.export(fallbackFile.getId(), "text/csv");
+          const rows = extractRowsFromFile_(fallbackFile);
+          if (rows && rows.length) {
+            Logger.log(
+              `populateSheetFromCSV_: Loaded data for ${sheetName} from fallback Drive item "${fallbackFile.getName()}".`
+            );
+            return rows;
           }
-          return fallbackFile.getBlob();
+          Logger.log(
+            `populateSheetFromCSV_: Fallback Drive item "${fallbackFile.getName()}" contained no usable rows.`
+          );
         }
       }
     }
+  }
+
+  if (!attemptCount) {
+    Logger.log(
+      `populateSheetFromCSV_: No candidates provided for ${sheetName}. Please supply a fileId or at least one candidate name.`
+    );
+  } else {
+    Logger.log(
+      `populateSheetFromCSV_: Attempted candidates for ${sheetName}: ${inspectedNames.join(
+        ", "
+      )}`
+    );
   }
 
   return null;
@@ -122,36 +202,72 @@ function getFileHandleByName_(name) {
     return exact.next();
   }
 
-  const cleaned = name.replace(/'/g, "\\'");
-  const list = Drive.Files.list({
-    q: `name='${cleaned}' and trashed=false`,
-    fields: "files(id,name,mimeType)",
-    pageSize: 1,
-  });
-  if (list.files && list.files.length) {
-    return DriveApp.getFileById(list.files[0].id);
-  }
-
-  const looseList = Drive.Files.list({
-    q: `name contains '${cleaned}' and trashed=false`,
-    fields: "files(id,name,mimeType)",
-    pageSize: 1,
-  });
-  if (looseList.files && looseList.files.length) {
-    return DriveApp.getFileById(looseList.files[0].id);
+  const escaped = name.replace(/'/g, "\\'");
+  const searchQuery = `title contains '${escaped}' and trashed = false`;
+  const search = DriveApp.searchFiles(searchQuery);
+  if (search.hasNext()) {
+    return search.next();
   }
 
   return null;
 }
 
-function getFileMimeType_(file) {
-  try {
-    const meta = Drive.Files.get(file.getId(), { fields: "mimeType" });
-    if (meta && meta.mimeType) {
-      return meta.mimeType;
+function extractRowsFromFile_(file) {
+  const mimeType = file.getMimeType();
+  if (mimeType === MimeType.GOOGLE_SHEETS) {
+    const ss = SpreadsheetApp.openById(file.getId());
+    const sheets = ss.getSheets();
+    for (let i = 0; i < sheets.length; i++) {
+      const sheet = sheets[i];
+      const range = sheet ? sheet.getDataRange() : null;
+      const values = range ? range.getValues() : null;
+      const normalized = normalizeRows_(values);
+      if (normalized && normalized.length) {
+        return normalized;
+      }
     }
-  } catch (err) {
-    // ignore
+    return null;
   }
-  return file.getMimeType();
+
+  const blob = file.getBlob();
+  const csvRows = Utilities.parseCsv(blob.getDataAsString());
+  return normalizeRows_(csvRows);
+}
+
+function normalizeRows_(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const maxColumns = rows.reduce(
+    (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+    0
+  );
+  if (maxColumns === 0) return null;
+  return rows.map((row) => {
+    const source = Array.isArray(row) ? row : [row];
+    if (source.length === maxColumns) return source;
+    const copy = source.slice(0, maxColumns);
+    while (copy.length < maxColumns) copy.push("");
+    return copy;
+  });
+}
+
+function getRowsFromLocalSheet_(spreadsheet, sourceTabName, targetSheetName) {
+  if (!sourceTabName || sourceTabName === targetSheetName) return null;
+  const sourceSheet = spreadsheet.getSheetByName(sourceTabName);
+  if (!sourceSheet) return null;
+  const range = sourceSheet.getDataRange();
+  if (!range) return null;
+  const values = range.getValues();
+  return normalizeRows_(values);
+}
+
+function safeGetFileById_(fileId) {
+  if (!fileId) return null;
+  try {
+    return DriveApp.getFileById(fileId);
+  } catch (err) {
+    Logger.log(
+      `populateSheetFromCSV_: Unable to open file with ID ${fileId}. ${err}`
+    );
+    return null;
+  }
 }
