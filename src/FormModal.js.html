@@ -13,6 +13,20 @@
       formStructure: [],
     };
 
+    function resolveLocalizedValue(...candidates) {
+      for (let i = 0; i < candidates.length; i++) {
+        const value = candidates[i];
+        if (value === undefined || value === null) {
+          continue;
+        }
+        const text = String(value).trim();
+        if (text) {
+          return text;
+        }
+      }
+      return "";
+    }
+
     function getModal() {
       if (modalState.modal && document.body.contains(modalState.modal)) {
         return modalState.modal;
@@ -211,12 +225,12 @@
               subTabId
             );
           } else {
-            showModalError(response?.message || "Failed to load form.");
+            showModalError(response?.message || "تعذر تحميل النموذج.");
           }
         })
         .withFailureHandler((error) => {
           setModalLoadingState(false);
-          showModalError(error?.message || "Error loading form data.");
+          showModalError(error?.message || "حدث خطأ أثناء تحميل بيانات النموذج.");
         })
         .getFormWithRecordData(formId, recordId, subTabId);
     }
@@ -366,8 +380,16 @@
         .replace(/\s+/g, "-")
         .toLowerCase()}`;
       label.htmlFor = inputId;
-      label.textContent =
-        field.label || field.fieldId || field.targetColumn || "حقل";
+      const resolvedLabel = resolveLocalizedValue(
+        field.labelAr,
+        field.label,
+        field.Field_Label_AR,
+        field.Field_Label,
+        field.fieldId,
+        field.targetColumn,
+        "حقل"
+      );
+      label.textContent = resolvedLabel;
 
       const type = String(field.type || "text").toLowerCase();
       let input;
@@ -403,9 +425,14 @@
       if (field.fieldId) {
         input.dataset.fieldId = field.fieldId;
       }
-      input.dataset.label = label.textContent;
-      if (field.placeholder) {
-        input.placeholder = field.placeholder;
+      input.dataset.label = resolvedLabel;
+      const resolvedPlaceholder = resolveLocalizedValue(
+        field.placeholderAr,
+        field.placeholder,
+        field.helpText
+      );
+      if (resolvedPlaceholder) {
+        input.placeholder = resolvedPlaceholder;
       }
 
       if (field.required) {
@@ -450,7 +477,7 @@
       if (!field.required) {
         const blankOption = document.createElement("option");
         blankOption.value = "";
-        blankOption.textContent = "—";
+        blankOption.textContent = "اختر";
         select.appendChild(blankOption);
       }
 
