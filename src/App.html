@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ar" dir="rtl">
 <head>
   <base target="_top" />
   <meta charset="UTF-8" />
@@ -18,7 +18,7 @@
       --sidebar-width: 260px;
       --header-height: 64px;
       --transition-speed: 0.25s;
-      font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+      font-family: "Tajawal", "Cairo", "Segoe UI", Tahoma, Arial, sans-serif;
     }
 
     *, *::before, *::after {
@@ -33,6 +33,7 @@
       color: var(--color-text-primary);
       font-size: 16px;
       line-height: 1.45;
+      direction: rtl;
     }
 
     body {
@@ -200,7 +201,7 @@
 
     .workspace-shell {
       display: grid;
-      grid-template-columns: var(--sidebar-width) 1fr;
+      grid-template-columns: 1fr var(--sidebar-width);
       grid-template-rows: auto 1fr;
       height: 100%;
     }
@@ -224,6 +225,7 @@
       gap: 12px;
       font-weight: 600;
       letter-spacing: 0.04em;
+      flex-direction: row-reverse;
     }
 
     .brand::before {
@@ -240,6 +242,7 @@
       display: flex;
       align-items: center;
       gap: 16px;
+      flex-direction: row-reverse;
     }
 
     .command-trigger {
@@ -252,6 +255,7 @@
       background: rgba(255, 255, 255, 0.05);
       color: var(--color-text-secondary);
       transition: background 0.2s ease, border-color 0.2s ease;
+      flex-direction: row-reverse;
     }
 
     .command-trigger:hover {
@@ -279,6 +283,7 @@
       padding: 8px 14px;
       border-radius: 999px;
       font-size: 0.9rem;
+      flex-direction: row-reverse;
     }
 
     .sign-out-btn {
@@ -296,10 +301,12 @@
 
     .nav-sidebar {
       background: rgba(11, 14, 20, 0.8);
-      border-right: 1px solid rgba(255, 255, 255, 0.06);
+      border-left: 1px solid rgba(255, 255, 255, 0.06);
       padding: 18px 16px;
       overflow-y: auto;
       backdrop-filter: blur(18px);
+      text-align: right;
+      grid-column: 2;
     }
 
     .nav-section-title {
@@ -316,7 +323,7 @@
 
     .tab-button {
       width: 100%;
-      text-align: left;
+      text-align: right;
       padding: 12px 14px;
       border-radius: 12px;
       border: 1px solid transparent;
@@ -342,7 +349,7 @@
 
     .sub-tab-list {
       list-style: none;
-      padding: 8px 0 4px 8px;
+      padding: 8px 8px 4px 0;
       margin: 0;
       display: flex;
       flex-direction: column;
@@ -351,7 +358,7 @@
 
     .sub-tab-button {
       width: 100%;
-      text-align: left;
+      text-align: right;
       padding: 9px 12px;
       border-radius: 10px;
       border: 1px solid transparent;
@@ -377,6 +384,7 @@
       overflow: hidden;
       background: linear-gradient(140deg, rgba(255, 255, 255, 0.05), rgba(10, 12, 20, 0.92));
       padding: 28px;
+      grid-column: 1;
     }
 
     .content-panel {
@@ -545,20 +553,20 @@
   <div id="app-root">
     <section id="login-view" class="view login-view active">
       <div class="login-card">
-        <h1>Nijjara <span>ERP</span></h1>
-        <p>Sign in to activate the command workspace.</p>
+        <h1>منصة نِجارا <span>ERP</span></h1>
+        <p>سجّل الدخول لتفعيل مساحة الأوامر.</p>
         <form id="login-form" novalidate>
           <div class="form-group">
-            <label for="login-email">Email</label>
-            <input id="login-email" name="email" type="email" placeholder="user@company.com" autocomplete="email" required />
+            <label for="login-email">اسم المستخدم أو البريد الإلكتروني</label>
+            <input id="login-email" name="email" type="text" placeholder="اسم المستخدم أو البريد الإلكتروني" autocomplete="username" required />
           </div>
           <div class="form-group">
-            <label for="login-password">Password</label>
+            <label for="login-password">كلمة المرور</label>
             <input id="login-password" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required />
           </div>
           <div id="login-error" class="error-banner" role="alert"></div>
           <div class="form-actions">
-            <button id="login-submit" class="btn" type="submit">Sign in</button>
+            <button id="login-submit" class="btn" type="submit">تسجيل الدخول</button>
           </div>
         </form>
       </div>
@@ -567,30 +575,30 @@
     <section id="workspace-view" class="view workspace-view">
       <div class="workspace-shell">
         <header class="app-header">
-          <div class="brand">Nijjara Command Workspace</div>
+          <div class="brand">مساحة أوامر نِجارا</div>
           <div class="header-actions">
             <button id="command-palette-trigger" class="command-trigger" type="button">
-              <span>Command Palette</span>
+              <span>لوحة الأوامر</span>
               <span class="keyboard-hint">Ctrl + K</span>
             </button>
             <div class="user-badge">
-              <span id="current-user-name">Guest</span>
-              <button id="sign-out-button" class="sign-out-btn" type="button">Sign out</button>
+              <span id="current-user-name">ضيف</span>
+              <button id="sign-out-button" class="sign-out-btn" type="button">تسجيل الخروج</button>
             </div>
           </div>
         </header>
 
         <aside class="nav-sidebar">
-          <div class="nav-section-title">Modules</div>
+          <div class="nav-section-title">الوحدات</div>
           <div id="tab-nav"></div>
         </aside>
 
         <main id="main-content-area" class="main-content">
           <div id="content-panel" class="content-panel">
-            <h2 id="workspace-title" class="workspace-title">Command Workspace</h2>
+            <h2 id="workspace-title" class="workspace-title">مساحة الأوامر</h2>
             <div id="workspace-empty-state" class="empty-state">
-              <h2>Welcome</h2>
-              <p>Use the command palette (<strong>Ctrl + K</strong>) or select a module from the navigation to begin.</p>
+              <h2>مرحباً</h2>
+              <p>استخدم لوحة الأوامر (<strong>Ctrl + K</strong>) أو اختر وحدة من القائمة الجانبية للبدء.</p>
             </div>
           </div>
         </main>
@@ -636,6 +644,20 @@
 
       const scriptRunner = (window.google && google.script && google.script.run) || null;
 
+      function getLocalizedLabel(...candidates) {
+        for (let i = 0; i < candidates.length; i++) {
+          const value = candidates[i];
+          if (value === undefined || value === null) {
+            continue;
+          }
+          const text = String(value).trim();
+          if (text) {
+            return text;
+          }
+        }
+        return "";
+      }
+
       function init() {
         loginForm.addEventListener("submit", handleLoginSubmit);
         signOutButton.addEventListener("click", handleSignOut);
@@ -650,14 +672,14 @@
       function handleLoginSubmit(event) {
         event.preventDefault();
         if (!scriptRunner) {
-          showToast("Google Apps Script context is unavailable.", "error");
+          showToast("خدمة Google Apps Script غير متاحة في هذا السياق.", "error");
           return;
         }
 
         const email = emailInput.value.trim();
         const password = passwordInput.value;
         if (!email || !password) {
-          setLoginError("Please provide both email and password.");
+          setLoginError("يرجى إدخال اسم المستخدم أو البريد الإلكتروني وكلمة المرور.");
           return;
         }
 
@@ -676,7 +698,7 @@
           const message =
             authResult && authResult.message
               ? String(authResult.message)
-              : "Invalid credentials. Please try again.";
+              : "بيانات الاعتماد غير صحيحة، يرجى المحاولة مرة أخرى.";
           setLoginError(message);
           return;
         }
@@ -716,13 +738,18 @@
 
       function handleLoginFailure(err) {
         setLoginLoading(false);
-        const message = err && err.message ? String(err.message) : "Login failed.";
+        const message =
+          err && err.message
+            ? String(err.message)
+            : "تعذر إتمام عملية تسجيل الدخول.";
         setLoginError(message);
       }
 
       function setLoginLoading(isLoading) {
         loginSubmit.disabled = isLoading;
-        loginSubmit.textContent = isLoading ? "Signing in..." : "Sign in";
+        loginSubmit.textContent = isLoading
+          ? "جارٍ تسجيل الدخول..."
+          : "تسجيل الدخول";
       }
 
       function setLoginError(message) {
@@ -738,8 +765,8 @@
       function fetchBootstrapForUser(userPayload) {
         if (!scriptRunner) {
           setLoginLoading(false);
-          showToast("Cannot load configuration in this context.", "error");
-          setLoginError("Cannot load configuration in this context.");
+          showToast("تعذر تحميل الإعدادات في هذا السياق.", "error");
+          setLoginError("تعذر تحميل الإعدادات في هذا السياق.");
           return;
         }
 
@@ -750,7 +777,9 @@
           .withFailureHandler((err) => {
             setLoginLoading(false);
             const message =
-              err && err.message ? String(err.message) : "Failed to load configuration.";
+              err && err.message
+                ? String(err.message)
+                : "فشل تحميل الإعدادات.";
             showToast(message, "error");
             setLoginError(message);
           })
@@ -791,10 +820,20 @@
 
       function renderUserBadge() {
         if (!state.user) {
-          currentUserName.textContent = "Guest";
+          currentUserName.textContent = "ضيف";
           return;
         }
-        const displayName = state.user.fullName || state.user.name || state.user.email || "User";
+        const displayName = getLocalizedLabel(
+          state.user.fullNameAr,
+          state.user.fullName,
+          state.user.nameAr,
+          state.user.name,
+          state.user.displayName,
+          state.user.email,
+          state.user.Username,
+          state.user.username,
+          "مستخدم"
+        );
         currentUserName.textContent = displayName;
       }
 
@@ -804,7 +843,7 @@
         if (!tabs.length) {
           const info = document.createElement("div");
           info.className = "empty-state";
-          info.innerHTML = "<p>No modules are currently available.</p>";
+          info.innerHTML = "<p>لا توجد وحدات متاحة حالياً.</p>";
           tabNav.appendChild(info);
           return;
         }
@@ -816,7 +855,14 @@
           const tabButton = document.createElement("button");
           tabButton.type = "button";
           tabButton.className = "tab-button";
-          tabButton.textContent = tab.tabLabelEn || tab.tabLabel || tab.tabId || "Module";
+          tabButton.textContent =
+            getLocalizedLabel(
+              tab.tabLabelAr,
+              tab.tabLabel,
+              tab.tabLabelEn,
+              tab.tabId,
+              "وحدة"
+            );
           tabButton.addEventListener("click", () => activateTab(tab.tabId));
           if (tab.tabId === state.activeTabId) {
             tabButton.classList.add("active");
@@ -832,7 +878,13 @@
               const subButton = document.createElement("button");
               subButton.type = "button";
               subButton.className = "sub-tab-button";
-              const subLabel = sub.labelEn || sub.viewLabel || sub.subId || "View";
+              const subLabel = getLocalizedLabel(
+                sub.labelAr,
+                sub.viewLabel,
+                sub.labelEn,
+                sub.subId,
+                "عرض"
+              );
               subButton.textContent = subLabel;
               subButton.addEventListener("click", () => activateSubTab(tab.tabId, sub.subId));
               if (sub.subId === state.activeSubTabId) {
@@ -853,7 +905,7 @@
         state.activeSubTabId = null;
         renderNavigation();
         updateWorkspaceTitle();
-        showEmptyState("Select a sub-tab to load data.");
+        showEmptyState("يرجى اختيار تبويب فرعي لعرض البيانات.");
       }
 
       function activateSubTab(tabId, subTabId) {
@@ -869,11 +921,23 @@
         const activeTab = tabs.find((tab) => tab.tabId === state.activeTabId);
         const subTab = activeTab?.subTabs?.find((sub) => sub.subId === state.activeSubTabId);
         if (subTab) {
-          workspaceTitle.textContent = subTab.labelEn || subTab.viewLabel || subTab.subId;
+          workspaceTitle.textContent = getLocalizedLabel(
+            subTab.labelAr,
+            subTab.viewLabel,
+            subTab.labelEn,
+            subTab.subId,
+            "عرض"
+          );
         } else if (activeTab) {
-          workspaceTitle.textContent = activeTab.tabLabelEn || activeTab.tabLabel || "Module";
+          workspaceTitle.textContent = getLocalizedLabel(
+            activeTab.tabLabelAr,
+            activeTab.tabLabel,
+            activeTab.tabLabelEn,
+            activeTab.tabId,
+            "وحدة"
+          );
         } else {
-          workspaceTitle.textContent = "Command Workspace";
+          workspaceTitle.textContent = "مساحة الأوامر";
         }
       }
 
@@ -891,20 +955,31 @@
         const commands = [];
         const tabs = Array.isArray(state.bootstrap?.tabs) ? state.bootstrap.tabs : [];
         tabs.forEach((tab) => {
-          const tabLabel = tab.tabLabelEn || tab.tabLabel || tab.tabId;
+          const tabLabel = getLocalizedLabel(
+            tab.tabLabelAr,
+            tab.tabLabel,
+            tab.tabLabelEn,
+            tab.tabId
+          );
           commands.push({
             id: tab.tabId,
             label: tabLabel,
             type: "tab",
-            hint: "Open module",
+            hint: "فتح الوحدة",
             data: tab,
           });
           (Array.isArray(tab.subTabs) ? tab.subTabs : []).forEach((sub) => {
+            const subLabel = getLocalizedLabel(
+              sub.labelAr,
+              sub.viewLabel,
+              sub.labelEn,
+              sub.subId
+            );
             commands.push({
               id: sub.subId,
-              label: `${tabLabel} • ${sub.labelEn || sub.viewLabel || sub.subId}`,
+              label: `${tabLabel} • ${subLabel}`,
               type: "subTab",
-              hint: "Load data view",
+              hint: "عرض البيانات",
               data: { tabId: tab.tabId, subTab: sub },
             });
           });
@@ -913,12 +988,19 @@
         const forms = state.bootstrap?.forms || {};
         Object.keys(forms).forEach((key) => {
           const form = forms[key];
-          const title = form.titleEn || form.formId || key;
+          const title = getLocalizedLabel(
+            form.titleAr,
+            form.formTitle,
+            form.title,
+            form.titleEn,
+            form.formId,
+            key
+          );
           commands.push({
             id: form.formId || key,
             label: title,
             type: "form",
-            hint: "Open dynamic form",
+            hint: "فتح النموذج الديناميكي",
             data: form,
           });
         });
@@ -941,7 +1023,7 @@
             window.openFormModal?.(command.id, null, state.activeSubTabId || "");
             break;
           default:
-            showToast("Command type not supported.", "warning");
+            showToast("نوع الأمر غير مدعوم.", "warning");
         }
       }
 
@@ -961,7 +1043,7 @@
 
       function loadSubTabContent(subTabId) {
         if (!scriptRunner) {
-          showToast("Cannot contact server.", "error");
+          showToast("تعذر الاتصال بالخادم.", "error");
           return;
         }
         contentPanel.classList.add("loading");
@@ -971,7 +1053,7 @@
           .withSuccessHandler((response) => {
             contentPanel.classList.remove("loading");
             if (!response || response.success === false) {
-              const message = response?.message || "Failed to load data.";
+              const message = response?.message || "فشل تحميل البيانات.";
               showEmptyState(message);
               return;
             }
@@ -979,7 +1061,10 @@
           })
           .withFailureHandler((err) => {
             contentPanel.classList.remove("loading");
-            const message = err && err.message ? String(err.message) : "Server error while loading data.";
+            const message =
+              err && err.message
+                ? String(err.message)
+                : "حدث خطأ في الخادم أثناء تحميل البيانات.";
             showEmptyState(message);
           })
           .getSubTabViewData(subTabId);
@@ -1021,7 +1106,8 @@
         contentPanel.innerHTML = "";
         const wrapper = document.createElement("div");
         wrapper.className = "empty-state";
-        wrapper.innerHTML = `<h2>Nothing to display</h2><p>${message}</p>`;
+        const details = message ? String(message) : "لا توجد بيانات متاحة حالياً.";
+        wrapper.innerHTML = `<h2>لا توجد بيانات</h2><p>${details}</p>`;
         contentPanel.appendChild(wrapper);
       }
 
